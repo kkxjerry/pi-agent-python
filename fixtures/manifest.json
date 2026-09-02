@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "earendil-works/pi",
+    "tag": "v0.84.4",
+    "commit": "b79e4cc"
+  },
+  "scenarios": [
+    {
+      "id": "text_only",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/text_only.jsonl"
+    },
+    {
+      "id": "thinking_stream",
+      "area": "ai",
+      "status": "registered"
+    },
+    {
+      "id": "single_tool",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/single_tool.jsonl"
+    },
+    {
+      "id": "parallel_out_of_order",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/parallel_out_of_order.jsonl"
+    },
+    {
+      "id": "sequential_tool",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "per_tool_sequential_override",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "invalid_tool_name",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/invalid_tool_name.jsonl"
+    },
+    {
+      "id": "invalid_tool_arguments",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "tool_throws_exception",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/tool_throws_exception.jsonl"
+    },
+    {
+      "id": "tool_progress_update",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "before_tool_call_block",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "after_tool_call_override",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "terminate_all_tool_results",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "truncated_tool_call",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/truncated_tool_call.jsonl"
+    },
+    {
+      "id": "provider_error",
+      "area": "ai",
+      "status": "registered"
+    },
+    {
+      "id": "provider_abort",
+      "area": "ai",
+      "status": "registered"
+    },
+    {
+      "id": "abort_during_tool",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "transform_context",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/transform_context.jsonl"
+    },
+    {
+      "id": "convert_custom_message",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "steering_one",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/steering_one.jsonl"
+    },
+    {
+      "id": "steering_all",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "follow_up_one",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/follow_up_one.jsonl"
+    },
+    {
+      "id": "follow_up_all",
+      "area": "core",
+      "status": "registered"
+    },
+    {
+      "id": "continue_existing_context",
+      "area": "core",
+      "status": "upstream-execution",
+      "fixture": "upstream/continue_existing_context.jsonl"
+    },
+    {
+      "id": "session_resume",
+      "area": "session",
+      "status": "registered"
+    },
+    {
+      "id": "corrupt_session_tail",
+      "area": "session",
+      "status": "registered"
+    },
+    {
+      "id": "compaction_threshold",
+      "area": "compaction",
+      "status": "registered"
+    },
+    {
+      "id": "compaction_split_turn",
+      "area": "compaction",
+      "status": "registered"
+    },
+    {
+      "id": "rpc_strict_lf",
+      "area": "rpc",
+      "status": "registered"
+    },
+    {
+      "id": "extension_tool_failure",
+      "area": "extension",
+      "status": "registered"
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "earendil-works/pi",
+    "tag": "v0.84.4",
+    "commit": "b79e4cc"
+  },
+  "entries": [
+    {
+      "upstream": "packages/ai/src/types.ts",
+      "python": "src/pi_agent/ai/types.py",
+      "phase": 4,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/ai/src/utils/event-stream.ts",
+      "python": "src/pi_agent/ai/event_stream.py",
+      "phase": 5,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/ai/src/api/openai-completions.ts",
+      "python": "src/pi_agent/ai/openai_compatible.py",
+      "phase": 6,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/ai/src/utils/json-parse.ts",
+      "python": "src/pi_agent/ai/json_parse.py",
+      "phase": 6,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/ai/src/provider-registry.ts",
+      "python": "src/pi_agent/ai/registry.py",
+      "phase": 6,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/agent/src/types.ts",
+      "python": "src/pi_agent/agent/types.py",
+      "phase": 7,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/agent/src/agent-loop.ts",
+      "python": "src/pi_agent/agent/agent_loop.py",
+      "phase": 7,
+      "status": "implemented"
+    },
+    {
+      "upstream": "packages/agent/src/agent.ts",
+      "python": "src/pi_agent/agent/agent.py",
+      "phase": 9,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/agent/src/harness/",
+      "python": "src/pi_agent/harness/",
+      "phase": 12,
+      "status": "mapped"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/session-manager.ts",
+      "python": "src/pi_agent/coding_agent/session/",
+      "phase": 13,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/compaction/",
+      "python": "src/pi_agent/coding_agent/compaction/",
+      "phase": 14,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/resource-loader.ts",
+      "python": "src/pi_agent/coding_agent/resources.py",
+      "phase": 15,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/settings-manager.ts",
+      "python": "src/pi_agent/coding_agent/settings.py",
+      "phase": 16,
+      "status": "mapped"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/agent-session.ts",
+      "python": "src/pi_agent/coding_agent/agent_session.py",
+      "phase": 17,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/coding-agent/src/core/extensions/",
+      "python": "src/pi_agent/coding_agent/extensions/",
+      "phase": 22,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/coding-agent/src/modes/",
+      "python": "src/pi_agent/coding_agent/modes/",
+      "phase": 18,
+      "status": "mapped"
+    },
+    {
+      "upstream": "packages/tui/src/",
+      "python": "src/pi_agent/tui/",
+      "phase": 25,
+      "status": "analyzed"
+    },
+    {
+      "upstream": "packages/telemetry/src/",
+      "python": "src/pi_agent/telemetry/",
+      "phase": 26,
+      "status": "mapped"
+    }
+  ]
+}

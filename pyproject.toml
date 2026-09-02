@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pi-agent-python"
+version = "0.2.0.dev0"
+description = "Python reimplementation of the official TypeScript pi agent toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pi-agent-python contributors" }]
+dependencies = []
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=9,<10",
+  "pytest-asyncio>=1.3,<2",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+pi-py = "pi_agent.cli:main"
+
+[project.urls]
+Upstream = "https://github.com/earendil-works/pi"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pi_agent = ["py.typed", "data/*.json"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "strict"
+markers = ["upstream: requires network access and the pinned TypeScript packages"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".upstream"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["pi_agent"]
+mypy_path = "src"
+warn_unused_configs = true

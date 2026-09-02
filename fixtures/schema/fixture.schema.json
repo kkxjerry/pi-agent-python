@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/pi-agent-python/fixture.schema.json",
+  "title": "pi parity JSONL record",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "record",
+        "schemaVersion",
+        "scenario",
+        "upstream",
+        "provenance"
+      ],
+      "properties": {
+        "record": {
+          "const": "meta"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "scenario": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream": {
+          "type": "object"
+        },
+        "provenance": {
+          "enum": [
+            "source-contract",
+            "upstream-execution",
+            "python-execution"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "record",
+        "index",
+        "event"
+      ],
+      "properties": {
+        "record": {
+          "const": "event"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "type": "object",
+          "required": [
+            "type"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "record",
+        "messageRoles",
+        "toolResultIds"
+      ],
+      "properties": {
+        "record": {
+          "const": "result"
+        },
+        "messageRoles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "toolResultIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}
