@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from .types import JsonValue
+from .types import AssistantMessage, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,9 +39,14 @@ class ProviderErrorDetails:
 
 
 class ProviderRequestError(RuntimeError):
-    def __init__(self, details: ProviderErrorDetails) -> None:
+    def __init__(
+        self,
+        details: ProviderErrorDetails,
+        partial_message: AssistantMessage | None = None,
+    ) -> None:
         super().__init__(details.message)
         self.details = details
+        self.partial_message = partial_message
 
     def with_response_started(self, started: bool) -> ProviderRequestError:
         if self.details.response_started == started:
@@ -56,8 +61,15 @@ class ProviderRequestError(RuntimeError):
                 headers=self.details.headers,
                 raw=self.details.raw,
                 response_started=started,
-            )
+            ),
+            self.partial_message,
         )
+
+    def with_partial_message(
+        self,
+        partial_message: AssistantMessage,
+    ) -> ProviderRequestError:
+        return ProviderRequestError(self.details, partial_message)
 
 
 def provider_error_from_payload(

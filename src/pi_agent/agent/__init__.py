@@ -1,5 +1,6 @@
-"""Low-level Agent Loop, tools, validation, and lifecycle events."""
+"""Low-level loop and stateful agent runtime."""
 
+from .agent import Agent, AgentListener, AgentOptions, AgentState
 from .agent_loop import (
     agent_loop,
     agent_loop_continue,
@@ -21,24 +22,55 @@ from .events import (
     TurnEndEvent,
     TurnStartEvent,
 )
+from .queues import MessageQueue, PendingMessageQueue
 from .schema import ToolArgumentsError, validate_json_schema
-from .types import AgentContext, AgentLoopConfig, AgentMessage, AgentTool, AgentToolResult
+from .types import (
+    AfterToolCallContext,
+    AfterToolCallResult,
+    AgentContext,
+    AgentLoopConfig,
+    AgentLoopTurnUpdate,
+    AgentMessage,
+    AgentThinkingLevel,
+    AgentTool,
+    AgentToolResult,
+    BeforeToolCallContext,
+    BeforeToolCallResult,
+    CompletedTurnContext,
+    QueueMode,
+    ToolExecutionMode,
+)
 
 __all__ = [
+    "AfterToolCallContext",
+    "AfterToolCallResult",
+    "Agent",
     "AgentContext",
     "AgentEndEvent",
     "AgentEvent",
     "AgentEventStream",
+    "AgentListener",
     "AgentLoopConfig",
+    "AgentLoopTurnUpdate",
     "AgentMessage",
+    "AgentOptions",
     "AgentStartEvent",
+    "AgentState",
+    "AgentThinkingLevel",
     "AgentTool",
     "AgentToolResult",
+    "BeforeToolCallContext",
+    "BeforeToolCallResult",
+    "CompletedTurnContext",
     "MessageEndEvent",
+    "MessageQueue",
     "MessageStartEvent",
     "MessageUpdateEvent",
+    "PendingMessageQueue",
+    "QueueMode",
     "ToolArgumentsError",
     "ToolExecutionEndEvent",
+    "ToolExecutionMode",
     "ToolExecutionStartEvent",
     "ToolExecutionUpdateEvent",
     "TurnEndEvent",

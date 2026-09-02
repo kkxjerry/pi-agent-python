@@ -82,8 +82,8 @@ def main() -> int:
         if metadata.get("capturedBy") != "tools/upstream-fixtures@0.0.0":
             fail(f"fixture capture identity drift: {path}")
         fixture_count += 1
-    if fixture_count != 10:
-        fail("exactly ten executed upstream fixtures are required at this milestone")
+    if fixture_count < 10:
+        fail("at least ten executed upstream fixtures are required after Phase 2")
     package = json.loads((ROOT / "tools/upstream-fixtures/package.json").read_text())
     dependencies = package.get("dependencies", {})
     for name in ("@earendil-works/pi-agent-core", "@earendil-works/pi-ai"):

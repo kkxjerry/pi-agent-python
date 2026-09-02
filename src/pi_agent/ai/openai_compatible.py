@@ -394,7 +394,10 @@ class OpenAICompatibleProvider:
         except asyncio.CancelledError:
             raise
         except ProviderRequestError as exc:
-            raise exc.with_response_started(started) from exc
+            normalized = exc.with_response_started(started)
+            if started:
+                normalized = normalized.with_partial_message(copy.deepcopy(partial))
+            raise normalized from exc
         except Exception as exc:
             raise ProviderRequestError(
                 ProviderErrorDetails(
@@ -402,7 +405,8 @@ class OpenAICompatibleProvider:
                     retryable=False,
                     raw=str(exc),
                     response_started=started,
-                )
+                ),
+                copy.deepcopy(partial) if started else None,
             ) from exc
         finally:
             if iterator is not None:
@@ -690,6 +694,12 @@ class OpenAICompatibleProvider:
         if isinstance(error, ProviderRequestError):
             message = error.details.message
             diagnostics.append(error.details.diagnostic())
+            if error.partial_message is not None:
+                partial = copy.deepcopy(error.partial_message)
+                partial.stop_reason = reason
+                partial.error_message = message
+                partial.diagnostics.extend(diagnostics)
+                return partial
         else:
             message = error
         return AssistantMessage(

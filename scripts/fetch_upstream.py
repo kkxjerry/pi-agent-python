@@ -11,10 +11,7 @@ from pathlib import Path
 
 TAG = "v0.84.4"
 ARCHIVE_NAME = "pi-v0.84.4.tar.gz"
-ARCHIVE_URL = (
-    "https://github.com/earendil-works/pi/releases/download/"
-    f"{TAG}/{ARCHIVE_NAME}"
-)
+ARCHIVE_URL = f"https://github.com/earendil-works/pi/releases/download/{TAG}/{ARCHIVE_NAME}"
 EXPECTED_SHA256 = "ca3958559b60f87ee44c84d94df8c3ee0b7eda575370402abb2d0ad9155cde4a"
 
 
@@ -50,14 +47,14 @@ def main() -> int:
     with tempfile.NamedTemporaryFile(dir=destination, delete=False) as handle:
         temporary = Path(handle.name)
     try:
-        with urllib.request.urlopen(ARCHIVE_URL, timeout=120) as response:
-            with temporary.open("wb") as output:
-                shutil.copyfileobj(response, output)
+        with (
+            urllib.request.urlopen(ARCHIVE_URL, timeout=120) as response,
+            temporary.open("wb") as output,
+        ):
+            shutil.copyfileobj(response, output)
         digest = sha256(temporary)
         if digest != EXPECTED_SHA256:
-            raise RuntimeError(
-                f"checksum mismatch: expected {EXPECTED_SHA256}, got {digest}"
-            )
+            raise RuntimeError(f"checksum mismatch: expected {EXPECTED_SHA256}, got {digest}")
         temporary.replace(archive)
     finally:
         temporary.unlink(missing_ok=True)

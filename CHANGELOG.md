@@ -1,21 +1,17 @@
 # Changelog
 
+## 0.4.0.dev0
+
+- Added append-only JSONL session records, validation, recoverable final-tail handling, branch navigation, labels, repository operations, and compacted-context reconstruction.
+- Added token estimation, safe compaction cut points, whole-batch split-turn fallback, iterative summaries, branch summaries, hooks, usage tracking, and model-boundary compaction control.
+- Added layered resource discovery for system/context prompts, skills, prompt templates, themes, extensions, and package manifests.
+- Added provenance-aware settings merge and explicit global/project persistence targets.
+- Added Phase 13–16 tests, structural gate, and audit documentation.
+
 ## 0.2.0.dev0
 
-### Phase 0–3 acceptance
-
-- Rebuilt the local repository on `develop` and pinned official pi `v0.84.4` / `b79e4cc`.
-- Added detailed source/behavior maps, 30 registered scenarios, and reproducible gates.
-- Executed ten scenarios against exact official `0.84.4` npm packages.
-- Verified every executed result/event stream exactly matched the earlier source contracts.
-
-### Phase 4–7 implementation
-
-- Added provider-neutral messages, content, models, cost tiers, usage, diagnostics, and options.
-- Added generic and assistant async event streams with safe completion semantics.
+- Rebuilt and accepted the Phase 0–3 local baseline.
+- Added provider-neutral AI types and serialization.
+- Added generic and assistant message event streams.
 - Added deterministic FauxProvider and OpenAI-compatible SSE provider.
-- Added partial Tool Call JSON, provider/model registries, retry policy, idle timeout, callbacks,
-  cache/sampling fields, header suppression, and structured errors.
-- Added prompt/continue Agent Loop, context conversion, tool validation/execution/progress,
-  error ToolResults, truncated-call protection, cancellation, and termination behavior.
-- Added direct Python parity checks against seven executed official TypeScript fixtures.
+- Added the low-level agent loop, continue mode, context transformation, tool validation, tool execution, and error recovery.

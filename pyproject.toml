@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pi-agent-python"
-version = "0.2.0.dev0"
+version = "0.3.0.dev0"
 description = "Python reimplementation of the official TypeScript pi agent toolkit"
 readme = "README.md"
 requires-python = ">=3.11"

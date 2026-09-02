@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, cast
 
 from .types import AssistantMessage, StopReason, ToolCall, message_to_dict
 
@@ -161,5 +161,5 @@ def event_result(event: AssistantMessageEvent) -> AssistantMessage:
 
 def normal_stop_reason(reason: StopReason) -> Literal["stop", "length", "toolUse", "deferred"]:
     if reason in {"stop", "length", "toolUse", "deferred"}:
-        return reason
+        return cast(Literal["stop", "length", "toolUse", "deferred"], reason)
     raise ValueError(f"Not a normal stop reason: {reason}")

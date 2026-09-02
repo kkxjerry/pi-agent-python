@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -110,6 +111,61 @@ async def single_tool(model: Model) -> tuple[list[dict[str, Any]], dict[str, Any
     )
 
 
+async def parallel_out_of_order(
+    model: Model,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    completion_order: list[str] = []
+
+    async def execute(
+        call_id: str,
+        arguments: dict[str, Any],
+        _signal: CancellationToken | None,
+        _update: Any,
+    ) -> AgentToolResult:
+        if arguments["value"] == "first":
+            await asyncio.sleep(0.02)
+        completion_order.append(call_id)
+        return AgentToolResult(content=[TextContent(f"echoed:{arguments['value']}")])
+
+    tool = AgentTool(
+        name="echo",
+        label="Echo",
+        description="Echo a value",
+        parameters={
+            "type": "object",
+            "required": ["value"],
+            "properties": {"value": {"type": "string"}},
+            "additionalProperties": False,
+        },
+        execute=execute,
+    )
+    provider = FauxProvider(
+        [
+            AssistantMessage(
+                content=[
+                    ToolCall("tool-1", "echo", {"value": "first"}),
+                    ToolCall("tool-2", "echo", {"value": "second"}),
+                ],
+                stop_reason="toolUse",
+            ),
+            assistant_text("done"),
+        ]
+    )
+    events, result = await collect(
+        agent_loop(
+            [UserMessage("echo both")],
+            AgentContext(system_prompt="fixture", tools=[tool]),
+            config(model, tool_execution="parallel"),
+            stream_fn=provider.stream,
+        )
+    )
+    result["observations"] = {
+        "completionOrder": completion_order,
+        "transcriptOrder": result["toolResultIds"],
+    }
+    return events, result
+
+
 async def invalid_tool_name(model: Model) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     provider = FauxProvider([assistant_tool("missing", {}), assistant_text("recovered")])
     return await collect(
@@ -182,6 +238,56 @@ async def transform_context(model: Model) -> tuple[list[dict[str, Any]], dict[st
     return events, result
 
 
+async def steering_one(model: Model) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    executed = False
+    delivered = False
+
+    def on_execute(_value: str) -> None:
+        nonlocal executed
+        executed = True
+
+    async def get_steering() -> list[UserMessage]:
+        nonlocal delivered
+        if executed and not delivered:
+            delivered = True
+            return [UserMessage("steer-now")]
+        return []
+
+    provider = FauxProvider([assistant_tool("echo", {"value": "one"}), assistant_text("steered")])
+    return await collect(
+        agent_loop(
+            [UserMessage("start")],
+            AgentContext(
+                system_prompt="fixture",
+                tools=[echo_tool(on_execute=on_execute)],
+            ),
+            config(model, get_steering_messages=get_steering),
+            stream_fn=provider.stream,
+        )
+    )
+
+
+async def follow_up_one(model: Model) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    delivered = False
+
+    async def get_follow_up() -> list[UserMessage]:
+        nonlocal delivered
+        if delivered:
+            return []
+        delivered = True
+        return [UserMessage("follow-up")]
+
+    provider = FauxProvider([assistant_text("initial"), assistant_text("followed")])
+    return await collect(
+        agent_loop(
+            [UserMessage("start")],
+            AgentContext(system_prompt="fixture"),
+            config(model, get_follow_up_messages=get_follow_up),
+            stream_fn=provider.stream,
+        )
+    )
+
+
 async def continue_existing_context(
     model: Model,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -199,19 +305,22 @@ async def continue_existing_context(
 
 
 SCENARIOS: dict[str, Scenario] = {
-    "text_only": text_only,
-    "single_tool": single_tool,
-    "invalid_tool_name": invalid_tool_name,
-    "tool_throws_exception": tool_throws_exception,
-    "truncated_tool_call": truncated_tool_call,
-    "transform_context": transform_context,
     "continue_existing_context": continue_existing_context,
+    "follow_up_one": follow_up_one,
+    "invalid_tool_name": invalid_tool_name,
+    "parallel_out_of_order": parallel_out_of_order,
+    "single_tool": single_tool,
+    "steering_one": steering_one,
+    "text_only": text_only,
+    "tool_throws_exception": tool_throws_exception,
+    "transform_context": transform_context,
+    "truncated_tool_call": truncated_tool_call,
 }
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario_name", sorted(SCENARIOS))
-async def test_python_phase_7_matches_executed_upstream_fixture(
+async def test_python_phase_7_8_matches_executed_upstream_fixture(
     model: Model,
     scenario_name: str,
 ) -> None:

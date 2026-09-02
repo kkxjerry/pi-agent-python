@@ -1,8 +1,19 @@
-# Architecture baseline
+# Architecture
 
-The Python project preserves the ownership boundaries of the pinned official
-TypeScript pi release. It is a behavioral reimplementation, not a wrapper around
-another Python agent framework.
+## Upstream mapping
+
+```text
+Official TypeScript pi                 Python package
+────────────────────────────────────────────────────────────────
+packages/ai                            pi_agent.ai
+packages/agent low-level loop          pi_agent.agent.agent_loop
+packages/agent stateful Agent          pi_agent.agent.agent
+packages/agent harness environment     pi_agent.harness
+packages/coding-agent                  later AgentSession/product phases
+packages/tui                           later pi_agent.tui phases
+```
+
+The mapping preserves ownership and behavior boundaries rather than translating files line by line.
 
 ## Dependency direction
 
@@ -13,89 +24,107 @@ pi_agent.agent
     ↓
 pi_agent.harness
     ↓
-pi_agent.coding_agent
-    ↓
-pi_agent.tui
-
-pi_agent.telemetry is optional and observes the other layers.
+later coding_agent / CLI / RPC / TUI
 ```
 
-Dependencies only point downward. In particular, the low-level loop cannot import
-CLI, TUI, session persistence, coding tools, or a concrete provider SDK.
+Lower layers never import product modes, persistence, or terminal UI code.
 
-## Package responsibilities
+## AI layer
 
-| Upstream | Python target | Responsibility |
-|---|---|---|
-| `packages/ai` | `pi_agent.ai` | Messages, models, usage/cost, provider contracts, assistant streams |
-| `packages/agent` | `pi_agent.agent` | Agent events, tool protocol, raw loop, queues, stateful Agent |
-| Agent harness | `pi_agent.harness` | Environment, run orchestration, context management, recovery |
-| `packages/coding-agent` | `pi_agent.coding_agent` | AgentSession, resources, settings, coding tools, modes, extensions |
-| `packages/tui` | `pi_agent.tui` | Terminal abstraction, editor, components, differential rendering |
-| `packages/telemetry` | `pi_agent.telemetry` | Optional typed spans and exporters |
+`pi_agent.ai` owns:
 
-## Core invariants
+- provider-neutral model and message types;
+- text, thinking, image, and Tool Call content blocks;
+- usage/cost accounting and model registries;
+- provider event streams;
+- Faux and OpenAI-compatible providers;
+- retry, cancellation, partial JSON, and transport errors.
 
-### Message boundary
+It does not execute tools or own a conversation transcript.
 
-The application transcript and provider transcript are different types:
+## Low-level loop
+
+`pi_agent.agent.agent_loop` owns a single invocation:
 
 ```text
-AgentMessage[]
-  → transform_context()
-  → AgentMessage[]
-  → convert_to_llm()
-  → Message[]
-  → Provider
+prompt/continue
+→ transform AgentMessage context
+→ convert to provider Message context
+→ stream assistant response
+→ execute a tool batch
+→ append ToolResult artifacts
+→ drain steering/follow-up messages
+→ continue or emit agent_end
 ```
 
-Transformation happens immediately before every provider request. It does not
-rewrite the caller's durable transcript.
+The input `AgentContext` is caller-owned and not mutated. The loop works on a top-level copy and returns only messages produced by the current invocation.
 
-### Event ownership
+## Parallel tool invariant
 
-The provider emits assistant-content events. Agent Core translates them into
-agent lifecycle and tool events. Later, AgentSession adds persistence, retry,
-compaction, branch, and resource behavior. CLI/TUI/RPC are consumers; they never
-own execution semantics.
+Parallel execution deliberately separates two orders:
 
-### Tool ordering
+```text
+Tool execution end events      actual completion order
+ToolResult message artifacts   assistant source order
+Provider transcript            assistant source order
+```
 
-Phase 7 implements the official sequential path. Phase 8 will add parallel
-execution while preserving two independent orders:
+Preflight is sequential. If global mode is `sequential`, or any called tool declares `execution_mode="sequential"`, the entire batch is sequential. This prevents write/edit/bash side effects from racing with sibling calls.
 
-- completion events follow real completion order;
-- ToolResult transcript messages follow the assistant's original Tool Call order.
+Tool lifecycle hooks run at these points:
 
-A tool marked sequential makes the whole batch sequential in the official loop.
+```text
+lookup → prepare arguments → schema validation → before_tool_call
+→ execute/timeout/cancel → after_tool_call
+→ tool_execution_end → ToolResult message
+```
 
-### Stream termination
+## Stateful Agent
 
-A terminal provider or agent event is observable by async iteration and also
-resolves `result()`. The first terminal result wins. Producers are retained until
-completion, and explicit `end()` wakes pending consumers without replacing an
-already resolved result.
+`pi_agent.agent.Agent` owns reusable runtime state:
 
-### Session boundary
+- system prompt, model, thinking level, tools, and transcript;
+- current streamed assistant message;
+- pending Tool Call IDs;
+- steering and follow-up FIFO queues;
+- active cancellation token;
+- ordered event subscribers and listener failures.
 
-Session persistence is not part of Agent Core. The future session store is an
-append-only JSONL tree. Branch changes move the active leaf instead of deleting
-history. Compaction and branch summaries append entries rather than mutating old
-messages.
+Listeners are awaited in registration order. `is_streaming` remains true while `agent_end` listeners settle. A new cancellation token is created for every run, so an aborted Agent can be reused.
 
-### Shared product session
+## Execution environment and coding tools
 
-Print, JSON, RPC, SDK, and TUI will all drive the same `AgentSession`. A run mode
-adds only input/output adaptation.
+`ExecutionEnv` composes a `FileSystem`, `Shell`, and working directory. Coding tools depend only on that interface:
 
-## TypeScript-to-Python runtime mapping
+```text
+read   UTF-8 line ranges and bounded output
+write  atomic create/replace
+edit   exact unique replacements, all-or-nothing
+bash   streamed stdout/stderr, timeout, cancellation, process cleanup
+```
 
-| TypeScript | Python |
-|---|---|
-| `Promise<T>` | coroutine / `Awaitable[T]` |
-| `AsyncIterable<T>` | `AsyncIterator[T]` |
-| `AbortSignal` | `CancellationToken` plus asyncio task cancellation |
-| discriminated union | tagged dataclasses and type aliases |
-| TypeBox/JSON Schema | explicit JSON-Schema validation at the tool boundary |
-| Node stream | async line transport and injectable provider adapter |
-| extension module | Python module/entry point with transactional activation |
+`LocalFileSystem` and `LocalShell` are the default adapters. Tests can inject fake implementations without touching the user's machine.
+
+## Harness
+
+`AgentHarness` is session-independent orchestration. It composes:
+
+- a stateful Agent;
+- an ExecutionEnv;
+- the default coding tools plus optional custom tools;
+- structured run results and usage aggregation.
+
+It intentionally does not yet own persistent sessions, compaction, resource discovery, extensions, RPC, or TUI. Those remain separate later phases rather than being hidden inside the low-level runtime.
+
+## Persistence boundary
+
+Phase 12 ends before persistence. Later layers will add:
+
+```text
+append-only session tree
+→ compaction and branch summaries
+→ AgentSession
+→ print/json/rpc/interactive modes
+```
+
+This order prevents storage and UI concerns from changing the already-tested Agent Loop semantics.

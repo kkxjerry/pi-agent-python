@@ -1,0 +1,77 @@
+"""Append-only session records, JSONL persistence, and branch navigation."""
+
+from .codec import SessionCodecError, record_from_dict, record_to_dict
+from .context import (
+    DEFAULT_BRANCH_SUMMARY_PREFIX,
+    DEFAULT_COMPACTION_PREFIX,
+    ReconstructedContext,
+    reconstruct_context,
+)
+from .manager import SessionInfo, SessionManager, SessionRepository
+from .store import (
+    InMemorySessionStore,
+    JsonlSessionStore,
+    SessionCorruptionError,
+    SessionError,
+    SessionLoadResult,
+    SessionStore,
+    SessionValidationError,
+    SessionWarning,
+    decode_jsonl,
+    validate_records,
+)
+from .tree import SessionPath, SessionTree, SessionTreeError
+from .types import (
+    SESSION_SCHEMA_VERSION,
+    BranchSummaryEntry,
+    CompactionEntry,
+    CursorEntry,
+    CustomEntry,
+    LabelEntry,
+    MessageEntry,
+    ModelChangeEntry,
+    SessionHeader,
+    SessionRecord,
+    ThinkingLevelChangeEntry,
+    TreeEntry,
+    new_entry_id,
+)
+
+__all__ = [
+    "DEFAULT_BRANCH_SUMMARY_PREFIX",
+    "DEFAULT_COMPACTION_PREFIX",
+    "SESSION_SCHEMA_VERSION",
+    "BranchSummaryEntry",
+    "CompactionEntry",
+    "CursorEntry",
+    "CustomEntry",
+    "InMemorySessionStore",
+    "JsonlSessionStore",
+    "LabelEntry",
+    "MessageEntry",
+    "ModelChangeEntry",
+    "ReconstructedContext",
+    "SessionCodecError",
+    "SessionCorruptionError",
+    "SessionError",
+    "SessionHeader",
+    "SessionInfo",
+    "SessionLoadResult",
+    "SessionManager",
+    "SessionPath",
+    "SessionRecord",
+    "SessionRepository",
+    "SessionStore",
+    "SessionTree",
+    "SessionTreeError",
+    "SessionValidationError",
+    "SessionWarning",
+    "ThinkingLevelChangeEntry",
+    "TreeEntry",
+    "decode_jsonl",
+    "new_entry_id",
+    "reconstruct_context",
+    "record_from_dict",
+    "record_to_dict",
+    "validate_records",
+]

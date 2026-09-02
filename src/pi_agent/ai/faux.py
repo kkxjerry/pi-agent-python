@@ -171,8 +171,10 @@ class FauxProvider:
                     )
             if options.signal is not None:
                 options.signal.raise_if_cancelled()
-            if final.stop_reason in {"error", "aborted"}:
-                stream.push(ErrorEvent(final.stop_reason, final))
+            if final.stop_reason == "error":
+                stream.push(ErrorEvent("error", final))
+            elif final.stop_reason == "aborted":
+                stream.push(ErrorEvent("aborted", final))
             else:
                 stream.push(DoneEvent(normal_stop_reason(final.stop_reason), final))
         except asyncio.CancelledError as exc:

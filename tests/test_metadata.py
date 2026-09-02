@@ -9,7 +9,7 @@ from pi_agent.cli import main
 
 
 def test_version_and_upstream_are_pinned() -> None:
-    assert __version__ == "0.2.0.dev0"
+    assert __version__ == "0.3.0.dev0"
     assert UPSTREAM.repository == "earendil-works/pi"
     assert UPSTREAM.tag == "v0.84.4"
     assert UPSTREAM.commit == "b79e4cc"
@@ -36,6 +36,6 @@ def test_packaged_manifest_and_parity_cli(capsys: object) -> None:
     assert main(["parity", "--json"]) == 0
     output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert json.loads(output) == {
-        "byStatus": {"registered": 20, "upstream-execution": 10},
+        "byStatus": {"registered": 10, "upstream-execution": 20},
         "total": 30,
     }

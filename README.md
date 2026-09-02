@@ -1,65 +1,118 @@
 # pi-agent-python
 
-A clean Python behavioral reimplementation of the pinned official TypeScript pi
-agent toolkit. Current milestone: **Phase 0–7**.
+A Python reimplementation of the pinned official TypeScript pi behavior.
 
-## Development setup
+- Upstream: `earendil-works/pi`
+- Baseline: `v0.84.4` / `b79e4cc`
+- Python: 3.11+
+- Current implementation milestone: Phase 0–16
+
+This is an independent Python package. It does not reuse PaiCLI, Java-agent, LangChain, LangGraph, AutoGen, or CrewAI architecture.
+
+## Development
 
 ```bash
-uv sync --python 3.11 --extra dev
-uv run pytest -q
-uv run ruff check .
+uv sync --all-extras
+uv run ruff format --check src tests
+uv run ruff check src tests
 uv run mypy src
+uv run pytest -q
 ```
 
-## Metadata commands
+Baseline and milestone gates:
 
 ```bash
-uv run pi-py --version
-uv run pi-py upstream --json
-uv run pi-py parity --json
+uv run python scripts/check_phase_0_3.py
+uv run python scripts/check_phase_13_16.py
 ```
 
-## Low-level API
+## AI and Agent Loop
 
 ```python
-from pi_agent.ai import AssistantMessage, FauxProvider, TextContent, UserMessage
 from pi_agent.agent import AgentContext, AgentLoopConfig, agent_loop, default_convert_to_llm
+from pi_agent.ai import FauxProvider, Model, TextContent, AssistantMessage, UserMessage
 
-provider = FauxProvider([
-    AssistantMessage(content=[TextContent("hello")], stop_reason="stop")
-])
+model = Model(api="openai-completions", provider="fixture", id="fixture", name="Fixture")
+provider = FauxProvider([AssistantMessage(content=[TextContent("done")], stop_reason="stop")])
 stream = agent_loop(
     [UserMessage("hello")],
-    AgentContext(system_prompt="You are a coding agent."),
+    AgentContext(),
     AgentLoopConfig(model=model, convert_to_llm=default_convert_to_llm),
     stream_fn=provider.stream,
 )
-
-async for event in stream:
-    print(event.type)
-messages = await stream.result()
 ```
 
-Real network requests are opt-in. The test suite uses deterministic transports
-and does not spend model tokens.
+## Append-only sessions
 
-## Upstream behavior evidence
+```python
+from pi_agent.ai import UserMessage
+from pi_agent.harness.session import SessionManager
+
+session = SessionManager.create(
+    ".pi/sessions/example.jsonl",
+    cwd=".",
+    session_id="example",
+)
+session.append_message(UserMessage("Inspect this repository"))
+```
+
+The JSONL store keeps the full branch tree. Navigation appends a cursor record; compaction appends a summary record instead of rewriting old messages. An invalid unterminated final record can be repaired explicitly, while corruption in the middle of a session fails closed.
+
+## Compaction
+
+```python
+from pi_agent.harness.compaction import CompactionController, CompactionSettings
+
+controller = CompactionController(
+    CompactionSettings(
+        context_window=128_000,
+        reserve_tokens=16_384,
+        keep_recent_tokens=20_000,
+    ),
+    summarizer,
+)
+decision = await controller.prepare_next_provider_context(session)
+```
+
+The controller is intended for the boundary after tool results and immediately before the next provider request. Safe cuts never separate a ToolCall from its ToolResult batch.
+
+## Resources
+
+```python
+from pathlib import Path
+from pi_agent.harness.resource_loader import ResourceLoader, ResourceLoaderConfig
+from pi_agent.harness.system_prompt import SystemPromptBuilder
+
+snapshot = ResourceLoader(ResourceLoaderConfig(cwd=Path.cwd())).load()
+system_prompt = SystemPromptBuilder().build(snapshot)
+```
+
+Discovery covers user and project `SYSTEM.md`, `APPEND_SYSTEM.md`, ancestor `AGENTS.md`/`CLAUDE.md`, skills, prompt templates, themes, extension references, and package manifests. Skill bodies remain on demand rather than being injected wholesale.
+
+## Settings
+
+```python
+from pi_agent.coding_agent.settings import SettingsResolver
+
+settings = SettingsResolver().resolve(
+    global_path="~/.pi/agent/settings.json",
+    project_path=".pi/settings.json",
+    cli={"model.id": "example-model"},
+    runtime={"thinking.level": "high"},
+)
+print(settings.get("model.id"))
+print(settings.source("model.id"))
+```
+
+Precedence is defaults → global → project → environment → CLI → runtime. Every resolved key retains its source layer and location. Runtime overrides are not persisted implicitly.
+
+## Upstream fixture verification
 
 ```bash
-cd tools/upstream-fixtures
-npm ci --ignore-scripts --no-audit --no-fund
-npm run typecheck
-npm run capture -- --out /tmp/pi-upstream-capture
-cd ../..
-python scripts/compare_upstream_capture.py /tmp/pi-upstream-capture
+npm --prefix tools/upstream-fixtures ci
+npm --prefix tools/upstream-fixtures run typecheck
+npm --prefix tools/upstream-fixtures run capture -- --out /tmp/pi-upstream-capture
+uv run python scripts/compare_upstream_capture.py /tmp/pi-upstream-capture
 ```
 
-The checked-in fixture provenance is `upstream-execution`, not a hand-authored
-claim. See `PARITY.md`, `docs/audit/`, and `docs/upstream/`.
-
-## Current boundary
-
-Phase 7 is sequential. Parallel tools are Phase 8; stateful Agent,
-steering/follow-up, and subscribers are Phase 9. Sessions, compaction, coding
-product modes, extensions, and TUI are intentionally later layers.
+See `PARITY.md`, `SCOPE.md`, and `docs/audit/` for exact claims and deliberate boundaries.

@@ -375,4 +375,5 @@ async def test_openai_provider_does_not_retry_after_stream_has_started(model: Mo
     ]
     assert result.stop_reason == "error"
     assert result.error_message == "connection lost"
+    assert result.content == [TextContent("partial")]
     assert result.diagnostics[0]["responseStarted"] is True

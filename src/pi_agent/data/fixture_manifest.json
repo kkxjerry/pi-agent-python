@@ -15,7 +15,8 @@
     {
       "id": "thinking_stream",
       "area": "ai",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/thinking_stream.jsonl"
     },
     {
       "id": "single_tool",
@@ -32,12 +33,14 @@
     {
       "id": "sequential_tool",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/sequential_tool.jsonl"
     },
     {
       "id": "per_tool_sequential_override",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/per_tool_sequential_override.jsonl"
     },
     {
       "id": "invalid_tool_name",
@@ -48,7 +51,8 @@
     {
       "id": "invalid_tool_arguments",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/invalid_tool_arguments.jsonl"
     },
     {
       "id": "tool_throws_exception",
@@ -59,22 +63,26 @@
     {
       "id": "tool_progress_update",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/tool_progress_update.jsonl"
     },
     {
       "id": "before_tool_call_block",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/before_tool_call_block.jsonl"
     },
     {
       "id": "after_tool_call_override",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/after_tool_call_override.jsonl"
     },
     {
       "id": "terminate_all_tool_results",
       "area": "core",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/terminate_all_tool_results.jsonl"
     },
     {
       "id": "truncated_tool_call",
@@ -85,12 +93,14 @@
     {
       "id": "provider_error",
       "area": "ai",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/provider_error.jsonl"
     },
     {
       "id": "provider_abort",
       "area": "ai",
-      "status": "registered"
+      "status": "upstream-execution",
+      "fixture": "upstream/provider_abort.jsonl"
     },
     {
       "id": "abort_during_tool",

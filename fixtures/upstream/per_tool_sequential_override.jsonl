@@ -1,0 +1,31 @@
+{"record":"meta","schemaVersion":1,"scenario":"per_tool_sequential_override","upstream":{"repository":"earendil-works/pi","tag":"v0.84.4","commit":"b79e4cc"},"provenance":"upstream-execution","capturedBy":"tools/upstream-fixtures@0.0.0"}
+{"record":"event","index":0,"event":{"type":"agent_start"}}
+{"record":"event","index":1,"event":{"type":"turn_start"}}
+{"record":"event","index":2,"event":{"type":"message_start","role":"user","text":"echo with override"}}
+{"record":"event","index":3,"event":{"type":"message_end","role":"user","text":"echo with override"}}
+{"record":"event","index":4,"event":{"type":"message_start","role":"assistant","stopReason":"pending","toolCallIds":[]}}
+{"record":"event","index":5,"event":{"type":"message_update","assistantEventType":"toolcall_start"}}
+{"record":"event","index":6,"event":{"type":"message_update","assistantEventType":"toolcall_delta"}}
+{"record":"event","index":7,"event":{"type":"message_update","assistantEventType":"toolcall_end"}}
+{"record":"event","index":8,"event":{"type":"message_update","assistantEventType":"toolcall_start"}}
+{"record":"event","index":9,"event":{"type":"message_update","assistantEventType":"toolcall_delta"}}
+{"record":"event","index":10,"event":{"type":"message_update","assistantEventType":"toolcall_end"}}
+{"record":"event","index":11,"event":{"type":"message_end","role":"assistant","text":"","stopReason":"toolUse","toolCallIds":["tool-1","tool-2"]}}
+{"record":"event","index":12,"event":{"type":"tool_execution_start","toolCallId":"tool-1","toolName":"echo"}}
+{"record":"event","index":13,"event":{"type":"tool_execution_end","toolCallId":"tool-1","toolName":"echo","isError":false}}
+{"record":"event","index":14,"event":{"type":"message_start","role":"toolResult","text":"echoed:first","toolCallId":"tool-1","toolName":"echo","isError":false}}
+{"record":"event","index":15,"event":{"type":"message_end","role":"toolResult","text":"echoed:first","toolCallId":"tool-1","toolName":"echo","isError":false}}
+{"record":"event","index":16,"event":{"type":"tool_execution_start","toolCallId":"tool-2","toolName":"echo"}}
+{"record":"event","index":17,"event":{"type":"tool_execution_end","toolCallId":"tool-2","toolName":"echo","isError":false}}
+{"record":"event","index":18,"event":{"type":"message_start","role":"toolResult","text":"echoed:second","toolCallId":"tool-2","toolName":"echo","isError":false}}
+{"record":"event","index":19,"event":{"type":"message_end","role":"toolResult","text":"echoed:second","toolCallId":"tool-2","toolName":"echo","isError":false}}
+{"record":"event","index":20,"event":{"type":"turn_end","assistantStopReason":"toolUse","toolResultIds":["tool-1","tool-2"]}}
+{"record":"event","index":21,"event":{"type":"turn_start"}}
+{"record":"event","index":22,"event":{"type":"message_start","role":"assistant","stopReason":"pending","toolCallIds":[]}}
+{"record":"event","index":23,"event":{"type":"message_update","assistantEventType":"text_start"}}
+{"record":"event","index":24,"event":{"type":"message_update","assistantEventType":"text_delta"}}
+{"record":"event","index":25,"event":{"type":"message_update","assistantEventType":"text_end"}}
+{"record":"event","index":26,"event":{"type":"message_end","role":"assistant","text":"done","stopReason":"stop","toolCallIds":[]}}
+{"record":"event","index":27,"event":{"type":"turn_end","assistantStopReason":"stop","toolResultIds":[]}}
+{"record":"event","index":28,"event":{"type":"agent_end","messageRoles":["user","assistant","toolResult","toolResult","assistant"],"toolResultIds":["tool-1","tool-2"]}}
+{"record":"result","messageRoles":["user","assistant","toolResult","toolResult","assistant"],"toolResultIds":["tool-1","tool-2"]}

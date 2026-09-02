@@ -1,0 +1,16 @@
+{"record":"meta","schemaVersion":1,"scenario":"thinking_stream","upstream":{"repository":"earendil-works/pi","tag":"v0.84.4","commit":"b79e4cc"},"provenance":"upstream-execution","capturedBy":"tools/upstream-fixtures@0.0.0"}
+{"record":"event","index":0,"event":{"type":"agent_start"}}
+{"record":"event","index":1,"event":{"type":"turn_start"}}
+{"record":"event","index":2,"event":{"type":"message_start","role":"user","text":"think"}}
+{"record":"event","index":3,"event":{"type":"message_end","role":"user","text":"think"}}
+{"record":"event","index":4,"event":{"type":"message_start","role":"assistant","stopReason":"pending","toolCallIds":[]}}
+{"record":"event","index":5,"event":{"type":"message_update","assistantEventType":"thinking_start"}}
+{"record":"event","index":6,"event":{"type":"message_update","assistantEventType":"thinking_delta"}}
+{"record":"event","index":7,"event":{"type":"message_update","assistantEventType":"thinking_end"}}
+{"record":"event","index":8,"event":{"type":"message_update","assistantEventType":"text_start"}}
+{"record":"event","index":9,"event":{"type":"message_update","assistantEventType":"text_delta"}}
+{"record":"event","index":10,"event":{"type":"message_update","assistantEventType":"text_end"}}
+{"record":"event","index":11,"event":{"type":"message_end","role":"assistant","text":"answer","stopReason":"stop","toolCallIds":[]}}
+{"record":"event","index":12,"event":{"type":"turn_end","assistantStopReason":"stop","toolResultIds":[]}}
+{"record":"event","index":13,"event":{"type":"agent_end","messageRoles":["user","assistant"],"toolResultIds":[]}}
+{"record":"result","messageRoles":["user","assistant"],"toolResultIds":[]}

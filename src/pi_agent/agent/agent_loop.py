@@ -4,8 +4,8 @@ import asyncio
 import copy
 import inspect
 from collections.abc import Awaitable
-from dataclasses import replace
-from typing import Any, TypeGuard, TypeVar, cast
+from dataclasses import dataclass, replace
+from typing import Any, TypeGuard, TypeVar
 
 from pi_agent.ai import (
     AssistantMessage,
@@ -24,7 +24,7 @@ from pi_agent.ai import (
     UserMessage,
 )
 
-from .event_stream import AgentEventStream
+from .event_stream import AgentEventSink, AgentEventStream
 from .events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -39,11 +39,16 @@ from .events import (
 )
 from .schema import ToolArgumentsError, validate_json_schema
 from .types import (
+    AfterToolCallContext,
+    AfterToolCallResult,
     AgentContext,
     AgentLoopConfig,
+    AgentLoopTurnUpdate,
     AgentMessage,
     AgentTool,
     AgentToolResult,
+    BeforeToolCallContext,
+    CompletedTurnContext,
 )
 
 T = TypeVar("T")
@@ -53,8 +58,25 @@ _TRUNCATED_TOOL_TEMPLATE = (
 )
 
 
+@dataclass(slots=True)
+class _PreparedToolCall:
+    index: int
+    call: ToolCall
+    tool: AgentTool
+    args: dict[str, Any]
+
+
+@dataclass(slots=True)
+class _ToolOutcome:
+    index: int
+    call: ToolCall
+    args: dict[str, Any]
+    result: AgentToolResult
+    is_error: bool
+
+
 def default_convert_to_llm(messages: list[AgentMessage]) -> list[Message]:
-    """Filter application-specific messages at the model boundary."""
+    """Filter application-only messages at the provider boundary."""
 
     return [message for message in messages if _is_llm_message(message)]
 
@@ -66,19 +88,24 @@ def agent_loop(
     *,
     stream_fn: StreamFunction,
     signal: CancellationToken | None = None,
+    event_sink: AgentEventSink | None = None,
 ) -> AgentEventStream:
-    """Start a low-level prompt run and return its event stream immediately."""
+    """Start a low-level prompt run and return its event stream immediately.
 
-    stream = AgentEventStream()
+    The caller-owned context is never mutated. The returned ``agent_end`` messages
+    contain only artifacts produced by this invocation, including the prompts.
+    """
+
+    stream = AgentEventStream(event_sink, buffer_events=event_sink is None)
     runtime_context = AgentContext(
         system_prompt=context.system_prompt,
-        messages=[*context.messages, *prompts],
-        tools=context.tools,
+        messages=[*context.messages, *copy.deepcopy(prompts)],
+        tools=list(context.tools),
     )
     task = asyncio.create_task(
         _run_guarded(
             stream,
-            prompts=prompts,
+            prompts=copy.deepcopy(prompts),
             context=runtime_context,
             config=config,
             stream_fn=stream_fn,
@@ -96,18 +123,19 @@ def agent_loop_continue(
     *,
     stream_fn: StreamFunction,
     signal: CancellationToken | None = None,
+    event_sink: AgentEventSink | None = None,
 ) -> AgentEventStream:
-    """Continue from an existing user/tool-result tail without adding a prompt."""
+    """Continue a non-assistant transcript tail without adding a user prompt."""
 
     if not context.messages:
         raise ValueError("Cannot continue an empty context")
     if isinstance(context.messages[-1], AssistantMessage):
         raise ValueError("Cannot continue when the last message is an assistant message")
-    stream = AgentEventStream()
+    stream = AgentEventStream(event_sink, buffer_events=event_sink is None)
     runtime_context = AgentContext(
         system_prompt=context.system_prompt,
         messages=context.messages,
-        tools=context.tools,
+        tools=list(context.tools),
     )
     task = asyncio.create_task(
         _run_guarded(
@@ -132,8 +160,13 @@ async def run_agent_loop(
     stream_fn: StreamFunction,
     signal: CancellationToken | None = None,
 ) -> list[AgentMessage]:
-    stream = agent_loop(prompts, context, config, stream_fn=stream_fn, signal=signal)
-    return await stream.result()
+    return await agent_loop(
+        prompts,
+        context,
+        config,
+        stream_fn=stream_fn,
+        signal=signal,
+    ).result()
 
 
 async def run_agent_loop_continue(
@@ -143,8 +176,12 @@ async def run_agent_loop_continue(
     stream_fn: StreamFunction,
     signal: CancellationToken | None = None,
 ) -> list[AgentMessage]:
-    stream = agent_loop_continue(context, config, stream_fn=stream_fn, signal=signal)
-    return await stream.result()
+    return await agent_loop_continue(
+        context,
+        config,
+        stream_fn=stream_fn,
+        signal=signal,
+    ).result()
 
 
 async def _run_guarded(
@@ -157,7 +194,7 @@ async def _run_guarded(
     signal: CancellationToken | None,
     is_continue: bool,
 ) -> None:
-    new_messages: list[AgentMessage] = list(prompts)
+    new_messages: list[AgentMessage] = list(copy.deepcopy(prompts))
     try:
         await _run_loop(
             stream,
@@ -203,77 +240,100 @@ async def _run_loop(
     new_messages: list[AgentMessage],
 ) -> None:
     active_signal = signal or config.stream_options.signal
+    model = config.model
+    thinking_level = config.thinking_level
+    last_completed: CompletedTurnContext | None = None
 
-    stream.push(AgentStartEvent())
-    stream.push(TurnStartEvent())
+    await stream.emit(AgentStartEvent())
+    await stream.emit(TurnStartEvent())
     if not is_continue:
         for prompt in prompts:
-            stream.push(MessageStartEvent(copy.deepcopy(prompt)))
-            stream.push(MessageEndEvent(copy.deepcopy(prompt)))
+            await stream.emit(MessageStartEvent(copy.deepcopy(prompt)))
+            await stream.emit(MessageEndEvent(copy.deepcopy(prompt)))
+
+    pending_messages: list[AgentMessage] = []
+    if config.get_steering_messages is not None:
+        pending_messages = await config.get_steering_messages()
 
     while True:
-        _raise_if_cancelled(active_signal)
-        assistant = await _stream_assistant_response(
-            stream,
-            context=context,
-            config=config,
-            stream_fn=stream_fn,
-            signal=active_signal,
-            new_messages=new_messages,
-        )
-
-        tool_calls = [block for block in assistant.content if isinstance(block, ToolCall)]
-        tool_results: list[ToolResultMessage] = []
-        executions: list[AgentToolResult] = []
-
-        if tool_calls:
-            for call in tool_calls:
-                if assistant.stop_reason == "length":
-                    execution = _failed_tool_result(_TRUNCATED_TOOL_TEMPLATE.format(name=call.name))
-                    stream.push(
-                        ToolExecutionStartEvent(
-                            tool_call_id=call.id,
-                            tool_name=call.name,
-                            args=copy.deepcopy(call.arguments),
+        has_more_tool_calls = True
+        while has_more_tool_calls or pending_messages:
+            if last_completed is not None:
+                if config.prepare_next_turn is not None:
+                    update = await _maybe_await(config.prepare_next_turn(last_completed))
+                    if update is not None:
+                        context, model, thinking_level = _apply_turn_update(
+                            update,
+                            context=context,
+                            model=model,
+                            thinking_level=thinking_level,
                         )
-                    )
-                    stream.push(
-                        ToolExecutionEndEvent(
-                            tool_call_id=call.id,
-                            tool_name=call.name,
-                            result=copy.deepcopy(execution),
-                            is_error=True,
-                            args=copy.deepcopy(call.arguments),
-                        )
-                    )
-                    result_message = _to_tool_result_message(call, execution, is_error=True)
-                else:
-                    result_message, execution, _is_error = await _execute_tool_call(
-                        stream,
-                        call=call,
-                        tools=context.tools,
-                        signal=active_signal,
-                    )
-                stream.push(MessageStartEvent(copy.deepcopy(result_message)))
-                stream.push(MessageEndEvent(copy.deepcopy(result_message)))
-                tool_results.append(result_message)
-                executions.append(execution)
-                if active_signal is not None and active_signal.cancelled:
-                    break
+                if not pending_messages and config.get_steering_messages is not None:
+                    pending_messages = await config.get_steering_messages()
+                await stream.emit(TurnStartEvent())
 
-            for result in tool_results:
-                context.messages.append(result)
-                new_messages.append(result)
+            if pending_messages:
+                copied = copy.deepcopy(pending_messages)
+                for message in copied:
+                    await stream.emit(MessageStartEvent(message))
+                    await stream.emit(MessageEndEvent(message))
+                    context.messages.append(message)
+                    new_messages.append(message)
+                pending_messages = []
 
-        terminate = bool(executions) and all(execution.terminate for execution in executions)
+            _raise_if_cancelled(active_signal)
+            assistant = await _stream_assistant_response(
+                stream,
+                context=context,
+                config=config,
+                model=model,
+                thinking_level=thinking_level,
+                stream_fn=stream_fn,
+                signal=active_signal,
+                new_messages=new_messages,
+            )
+            if assistant.stop_reason in {"error", "aborted"}:
+                await stream.emit(TurnEndEvent(copy.deepcopy(assistant), []))
+                await stream.emit(AgentEndEvent(copy.deepcopy(new_messages)))
+                return
 
-        stream.push(TurnEndEvent(copy.deepcopy(assistant), copy.deepcopy(tool_results)))
+            tool_calls = [block for block in assistant.content if isinstance(block, ToolCall)]
+            tool_results, executions = await _execute_tool_batch(
+                stream,
+                assistant=assistant,
+                calls=tool_calls,
+                context=context,
+                config=config,
+                signal=active_signal,
+                new_messages=new_messages,
+            )
+            terminate = bool(executions) and all(outcome.result.terminate for outcome in executions)
+            has_more_tool_calls = bool(tool_calls) and not terminate
 
-        if assistant.stop_reason in {"error", "aborted"} or not tool_calls or terminate:
-            stream.push(AgentEndEvent(copy.deepcopy(new_messages)))
-            return
+            await stream.emit(TurnEndEvent(copy.deepcopy(assistant), copy.deepcopy(tool_results)))
+            last_completed = CompletedTurnContext(
+                message=copy.deepcopy(assistant),
+                tool_results=copy.deepcopy(tool_results),
+                context=context,
+                new_messages=new_messages,
+            )
+            if config.should_stop_after_turn is not None and await _maybe_await(
+                config.should_stop_after_turn(last_completed)
+            ):
+                await stream.emit(AgentEndEvent(copy.deepcopy(new_messages)))
+                return
+            if config.get_steering_messages is not None:
+                pending_messages = await config.get_steering_messages()
 
-        stream.push(TurnStartEvent())
+        follow_up: list[AgentMessage] = []
+        if config.get_follow_up_messages is not None:
+            follow_up = await config.get_follow_up_messages()
+        if follow_up:
+            pending_messages = copy.deepcopy(follow_up)
+            continue
+        break
+
+    await stream.emit(AgentEndEvent(copy.deepcopy(new_messages)))
 
 
 async def _stream_assistant_response(
@@ -281,11 +341,13 @@ async def _stream_assistant_response(
     *,
     context: AgentContext,
     config: AgentLoopConfig,
+    model: Model,
+    thinking_level: Any,
     stream_fn: StreamFunction,
     signal: CancellationToken | None,
     new_messages: list[AgentMessage],
 ) -> AssistantMessage:
-    transformed: list[AgentMessage] = list(context.messages)
+    transformed: list[AgentMessage] = list(copy.deepcopy(context.messages))
     if config.transform_context is not None:
         transformed = await _maybe_await(config.transform_context(transformed, signal))
     llm_messages = await _maybe_await(config.convert_to_llm(transformed))
@@ -295,13 +357,14 @@ async def _stream_assistant_response(
     options = replace(
         config.stream_options,
         headers=dict(config.stream_options.headers),
-        env=dict(config.stream_options.env),
         metadata=dict(config.stream_options.metadata),
         sampling_params=dict(config.stream_options.sampling_params),
         signal=signal,
     )
+    if thinking_level != "off":
+        options.reasoning = thinking_level
     if config.get_api_key is not None:
-        refreshed_key = await _maybe_await(config.get_api_key(config.model.provider))
+        refreshed_key = await _maybe_await(config.get_api_key(model.provider))
         options.api_key = refreshed_key or options.api_key
 
     provider_context = Context(
@@ -309,154 +372,478 @@ async def _stream_assistant_response(
         messages=list(llm_messages),
         tools=[tool.definition() for tool in context.tools] or None,
     )
-    response = stream_fn(config.model, provider_context, options)
+    response_or_awaitable = stream_fn(model, provider_context, options)
+    response = (
+        await response_or_awaitable
+        if inspect.isawaitable(response_or_awaitable)
+        else response_or_awaitable
+    )
     inserted = False
     assistant_index = -1
     final: AssistantMessage | None = None
 
     async for provider_event in response:
         if isinstance(provider_event, StartEvent):
+            if inserted:
+                raise RuntimeError("Provider emitted more than one start event")
             partial = copy.deepcopy(provider_event.partial)
             context.messages.append(partial)
-            new_messages.append(partial)
+            new_messages.append(copy.deepcopy(partial))
             assistant_index = len(context.messages) - 1
             inserted = True
-            stream.push(MessageStartEvent(copy.deepcopy(partial)))
+            await stream.emit(MessageStartEvent(copy.deepcopy(partial)))
             continue
 
         if isinstance(provider_event, (DoneEvent, ErrorEvent)):
-            terminal = (
-                copy.deepcopy(provider_event.message)
+            terminal = copy.deepcopy(
+                provider_event.message
                 if isinstance(provider_event, DoneEvent)
-                else copy.deepcopy(provider_event.error)
+                else provider_event.error
             )
             if not inserted:
-                context.messages.append(copy.deepcopy(terminal))
-                new_messages.append(copy.deepcopy(terminal))
+                pending = copy.deepcopy(terminal)
+                pending.stop_reason = "pending"
+                pending.error_message = None
+                context.messages.append(pending)
+                new_messages.append(copy.deepcopy(pending))
                 assistant_index = len(context.messages) - 1
                 inserted = True
-                stream.push(MessageStartEvent(copy.deepcopy(terminal)))
+                await stream.emit(MessageStartEvent(copy.deepcopy(pending)))
             context.messages[assistant_index] = terminal
-            new_messages[-1] = terminal
-            stream.push(MessageEndEvent(copy.deepcopy(terminal)))
+            new_messages[-1] = copy.deepcopy(terminal)
+            await stream.emit(MessageEndEvent(copy.deepcopy(terminal)))
             final = terminal
             continue
 
         partial = copy.deepcopy(provider_event.partial)
         if not inserted:
             context.messages.append(partial)
-            new_messages.append(partial)
+            new_messages.append(copy.deepcopy(partial))
             assistant_index = len(context.messages) - 1
             inserted = True
-            stream.push(MessageStartEvent(copy.deepcopy(partial)))
+            await stream.emit(MessageStartEvent(copy.deepcopy(partial)))
         else:
             context.messages[assistant_index] = partial
-            new_messages[-1] = partial
-        stream.push(MessageUpdateEvent(copy.deepcopy(partial), copy.deepcopy(provider_event)))
+            new_messages[-1] = copy.deepcopy(partial)
+        await stream.emit(MessageUpdateEvent(copy.deepcopy(partial), copy.deepcopy(provider_event)))
 
     if not response.done:
         raise RuntimeError("Provider stream ended without a terminal event")
     resolved = copy.deepcopy(await response.result())
     if final is None:
         if not inserted:
-            context.messages.append(resolved)
-            new_messages.append(resolved)
-            stream.push(MessageStartEvent(copy.deepcopy(resolved)))
+            pending = copy.deepcopy(resolved)
+            pending.stop_reason = "pending"
+            pending.error_message = None
+            context.messages.append(pending)
+            new_messages.append(copy.deepcopy(pending))
+            await stream.emit(MessageStartEvent(copy.deepcopy(pending)))
             assistant_index = len(context.messages) - 1
         context.messages[assistant_index] = resolved
-        new_messages[-1] = resolved
-        stream.push(MessageEndEvent(copy.deepcopy(resolved)))
+        new_messages[-1] = copy.deepcopy(resolved)
+        await stream.emit(MessageEndEvent(copy.deepcopy(resolved)))
         final = resolved
     return final
 
 
-async def _execute_tool_call(
+async def _execute_tool_batch(
     stream: AgentEventStream,
     *,
-    call: ToolCall,
-    tools: list[AgentTool],
+    assistant: AssistantMessage,
+    calls: list[ToolCall],
+    context: AgentContext,
+    config: AgentLoopConfig,
     signal: CancellationToken | None,
-) -> tuple[ToolResultMessage, AgentToolResult, bool]:
-    args = copy.deepcopy(call.arguments)
-    stream.push(
-        ToolExecutionStartEvent(
-            tool_call_id=call.id,
-            tool_name=call.name,
-            args=copy.deepcopy(args),
-        )
-    )
-    tool = next((candidate for candidate in tools if candidate.name == call.name), None)
-    if tool is None:
-        result = _failed_tool_result(f"Tool {call.name} not found")
-        stream.push(ToolExecutionEndEvent(call.id, call.name, copy.deepcopy(result), True, args))
-        return _to_tool_result_message(call, result, is_error=True), result, True
+    new_messages: list[AgentMessage],
+) -> tuple[list[ToolResultMessage], list[_ToolOutcome]]:
+    if not calls:
+        return [], []
+    if assistant.stop_reason == "length":
+        outcomes: list[_ToolOutcome] = []
+        tool_results: list[ToolResultMessage] = []
+        for index, call in enumerate(calls):
+            await stream.emit(
+                ToolExecutionStartEvent(call.id, call.name, copy.deepcopy(call.arguments))
+            )
+            outcome = _ToolOutcome(
+                index=index,
+                call=call,
+                args=copy.deepcopy(call.arguments),
+                result=_failed_tool_result(_TRUNCATED_TOOL_TEMPLATE.format(name=call.name)),
+                is_error=True,
+            )
+            await _emit_tool_end(stream, outcome)
+            message = await _emit_tool_result_message(stream, outcome)
+            context.messages.append(message)
+            new_messages.append(copy.deepcopy(message))
+            outcomes.append(outcome)
+            tool_results.append(message)
+        return tool_results, outcomes
 
+    by_name = {tool.name: tool for tool in context.tools}
+    effective_mode = config.tool_execution
+    if any(
+        (tool := by_name.get(call.name)) is not None and tool.execution_mode == "sequential"
+        for call in calls
+    ):
+        effective_mode = "sequential"
+    if effective_mode == "sequential":
+        return await _execute_sequential_batch(
+            stream,
+            assistant=assistant,
+            calls=calls,
+            context=context,
+            config=config,
+            signal=signal,
+            new_messages=new_messages,
+        )
+    return await _execute_parallel_batch(
+        stream,
+        assistant=assistant,
+        calls=calls,
+        context=context,
+        config=config,
+        signal=signal,
+        new_messages=new_messages,
+    )
+
+
+async def _execute_sequential_batch(
+    stream: AgentEventStream,
+    *,
+    assistant: AssistantMessage,
+    calls: list[ToolCall],
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: CancellationToken | None,
+    new_messages: list[AgentMessage],
+) -> tuple[list[ToolResultMessage], list[_ToolOutcome]]:
+    outcomes: list[_ToolOutcome] = []
+    messages: list[ToolResultMessage] = []
+    for index, call in enumerate(calls):
+        await stream.emit(
+            ToolExecutionStartEvent(call.id, call.name, copy.deepcopy(call.arguments))
+        )
+        prepared_or_outcome = await _prepare_tool_call(
+            index=index,
+            call=call,
+            assistant=assistant,
+            context=context,
+            config=config,
+            signal=signal,
+        )
+        if isinstance(prepared_or_outcome, _PreparedToolCall):
+            outcome = await _run_prepared_tool(
+                prepared_or_outcome,
+                assistant=assistant,
+                context=context,
+                config=config,
+                signal=signal,
+                stream=stream,
+            )
+        else:
+            outcome = prepared_or_outcome
+        await _emit_tool_end(stream, outcome)
+        message = await _emit_tool_result_message(stream, outcome)
+        context.messages.append(message)
+        new_messages.append(copy.deepcopy(message))
+        outcomes.append(outcome)
+        messages.append(message)
+        if signal is not None and signal.cancelled:
+            break
+    return messages, outcomes
+
+
+async def _execute_parallel_batch(
+    stream: AgentEventStream,
+    *,
+    assistant: AssistantMessage,
+    calls: list[ToolCall],
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: CancellationToken | None,
+    new_messages: list[AgentMessage],
+) -> tuple[list[ToolResultMessage], list[_ToolOutcome]]:
+    outcomes: dict[int, _ToolOutcome] = {}
+    prepared: list[_PreparedToolCall] = []
+    for index, call in enumerate(calls):
+        await stream.emit(
+            ToolExecutionStartEvent(call.id, call.name, copy.deepcopy(call.arguments))
+        )
+        prepared_or_outcome = await _prepare_tool_call(
+            index=index,
+            call=call,
+            assistant=assistant,
+            context=context,
+            config=config,
+            signal=signal,
+        )
+        if isinstance(prepared_or_outcome, _PreparedToolCall):
+            prepared.append(prepared_or_outcome)
+        else:
+            outcomes[index] = prepared_or_outcome
+            await _emit_tool_end(stream, prepared_or_outcome)
+
+    tasks = [
+        asyncio.create_task(
+            _run_prepared_tool(
+                item,
+                assistant=assistant,
+                context=context,
+                config=config,
+                signal=signal,
+                stream=stream,
+            )
+        )
+        for item in prepared
+    ]
+    try:
+        for completed in asyncio.as_completed(tasks):
+            outcome = await completed
+            outcomes[outcome.index] = outcome
+            await _emit_tool_end(stream, outcome)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+    ordered = [outcomes[index] for index in range(len(calls)) if index in outcomes]
+    messages: list[ToolResultMessage] = []
+    for outcome in ordered:
+        message = await _emit_tool_result_message(stream, outcome)
+        context.messages.append(message)
+        new_messages.append(copy.deepcopy(message))
+        messages.append(message)
+    return messages, ordered
+
+
+async def _prepare_tool_call(
+    *,
+    index: int,
+    call: ToolCall,
+    assistant: AssistantMessage,
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: CancellationToken | None,
+) -> _PreparedToolCall | _ToolOutcome:
+    args: dict[str, Any] = copy.deepcopy(call.arguments)
+    tool = next((candidate for candidate in context.tools if candidate.name == call.name), None)
+    if tool is None:
+        return _ToolOutcome(
+            index,
+            call,
+            args,
+            _failed_tool_result(f"Tool {call.name} not found"),
+            True,
+        )
     try:
         _raise_if_cancelled(signal)
         if tool.prepare_arguments is not None:
-            args = await _maybe_await(tool.prepare_arguments(args))
-        validate_json_schema(args, cast(dict[str, Any], tool.parameters))
-
-        def on_update(partial_result: AgentToolResult) -> None:
-            stream.push(
-                ToolExecutionUpdateEvent(
-                    tool_call_id=call.id,
-                    tool_name=call.name,
-                    args=copy.deepcopy(args),
-                    partial_result=copy.deepcopy(partial_result),
+            prepared = await _maybe_await(tool.prepare_arguments(args))
+            if not isinstance(prepared, dict):
+                raise ToolArgumentsError("prepared arguments must be an object")
+            args = prepared
+        validate_json_schema(args, tool.parameters)
+        if config.before_tool_call is not None:
+            decision = await _maybe_await(
+                config.before_tool_call(
+                    BeforeToolCallContext(
+                        assistant_message=copy.deepcopy(assistant),
+                        tool_call=copy.deepcopy(call),
+                        args=copy.deepcopy(args),
+                        context=context,
+                    ),
+                    signal,
                 )
             )
+            if decision is not None and decision.block:
+                reason = decision.reason or f"Tool {call.name} was blocked"
+                return _ToolOutcome(
+                    index,
+                    call,
+                    args,
+                    AgentToolResult(
+                        content=[TextContent(reason)],
+                        details={},
+                        terminate=decision.terminate,
+                    ),
+                    True,
+                )
+        return _PreparedToolCall(index, call, tool, args)
+    except asyncio.CancelledError as exc:
+        return _ToolOutcome(
+            index,
+            call,
+            args,
+            _failed_tool_result(str(exc) or "Operation aborted"),
+            True,
+        )
+    except ToolArgumentsError as exc:
+        return _ToolOutcome(
+            index,
+            call,
+            args,
+            _failed_tool_result(f"Invalid arguments for tool {call.name}: {exc}"),
+            True,
+        )
+    except Exception as exc:
+        return _ToolOutcome(index, call, args, _failed_tool_result(str(exc)), True)
 
-        result = await tool.execute(call.id, args, signal, on_update)
-        _raise_if_cancelled(signal)
-        stream.push(
-            ToolExecutionEndEvent(
-                call.id,
-                call.name,
-                copy.deepcopy(result),
-                False,
-                copy.deepcopy(args),
+
+async def _run_prepared_tool(
+    prepared: _PreparedToolCall,
+    *,
+    assistant: AssistantMessage,
+    context: AgentContext,
+    config: AgentLoopConfig,
+    signal: CancellationToken | None,
+    stream: AgentEventStream,
+) -> _ToolOutcome:
+    update_tasks: list[asyncio.Task[None]] = []
+    accepting_updates = True
+
+    def on_update(partial_result: AgentToolResult) -> None:
+        if not accepting_updates:
+            return
+        update_tasks.append(
+            asyncio.create_task(
+                stream.emit(
+                    ToolExecutionUpdateEvent(
+                        tool_call_id=prepared.call.id,
+                        tool_name=prepared.call.name,
+                        args=copy.deepcopy(prepared.args),
+                        partial_result=copy.deepcopy(partial_result),
+                    )
+                )
             )
         )
-        return _to_tool_result_message(call, result, is_error=False), result, False
+
+    is_error = False
+    try:
+        _raise_if_cancelled(signal)
+        execution = prepared.tool.execute(
+            prepared.call.id,
+            copy.deepcopy(prepared.args),
+            signal,
+            on_update,
+        )
+        result = (
+            await asyncio.wait_for(execution, timeout=prepared.tool.timeout)
+            if prepared.tool.timeout is not None
+            else await execution
+        )
+        _raise_if_cancelled(signal)
+    except TimeoutError:
+        result = _failed_tool_result(
+            f"Tool {prepared.call.name} timed out after {prepared.tool.timeout:g}s"
+        )
+        is_error = True
     except asyncio.CancelledError as exc:
         result = _failed_tool_result(str(exc) or "Operation aborted")
-    except ToolArgumentsError as exc:
-        result = _failed_tool_result(f"Invalid arguments for tool {call.name}: {exc}")
+        is_error = True
     except Exception as exc:
         result = _failed_tool_result(str(exc))
+        is_error = True
+    finally:
+        accepting_updates = False
+        if update_tasks:
+            await asyncio.gather(*update_tasks)
 
-    stream.push(
+    if config.after_tool_call is not None:
+        try:
+            override = await _maybe_await(
+                config.after_tool_call(
+                    AfterToolCallContext(
+                        assistant_message=copy.deepcopy(assistant),
+                        tool_call=copy.deepcopy(prepared.call),
+                        args=copy.deepcopy(prepared.args),
+                        result=copy.deepcopy(result),
+                        is_error=is_error,
+                        context=context,
+                    ),
+                    signal,
+                )
+            )
+            if override is not None:
+                result, is_error = _apply_after_tool_override(result, is_error, override)
+        except Exception as exc:
+            result = _failed_tool_result(str(exc))
+            is_error = True
+    return _ToolOutcome(
+        prepared.index,
+        prepared.call,
+        prepared.args,
+        result,
+        is_error,
+    )
+
+
+def _apply_after_tool_override(
+    result: AgentToolResult,
+    is_error: bool,
+    override: AfterToolCallResult,
+) -> tuple[AgentToolResult, bool]:
+    updated = copy.deepcopy(result)
+    if override.content is not None:
+        updated.content = copy.deepcopy(override.content)
+    if override.replace_details or override.details is not None:
+        updated.details = copy.deepcopy(override.details)
+    if override.replace_usage or override.usage is not None:
+        updated.usage = copy.deepcopy(override.usage)
+    if override.terminate is not None:
+        updated.terminate = override.terminate
+    if override.is_error is not None:
+        is_error = override.is_error
+    return updated, is_error
+
+
+async def _emit_tool_end(stream: AgentEventStream, outcome: _ToolOutcome) -> None:
+    await stream.emit(
         ToolExecutionEndEvent(
-            call.id,
-            call.name,
-            copy.deepcopy(result),
-            True,
-            copy.deepcopy(args),
+            tool_call_id=outcome.call.id,
+            tool_name=outcome.call.name,
+            result=copy.deepcopy(outcome.result),
+            is_error=outcome.is_error,
+            args=copy.deepcopy(outcome.args),
         )
     )
-    return _to_tool_result_message(call, result, is_error=True), result, True
 
 
-def _to_tool_result_message(
-    call: ToolCall,
-    result: AgentToolResult,
-    *,
-    is_error: bool,
+async def _emit_tool_result_message(
+    stream: AgentEventStream,
+    outcome: _ToolOutcome,
 ) -> ToolResultMessage:
-    return ToolResultMessage(
-        tool_call_id=call.id,
-        tool_name=call.name,
-        content=copy.deepcopy(result.content),
-        details=copy.deepcopy(result.details),
-        usage=copy.deepcopy(result.usage),
-        added_tool_names=copy.deepcopy(result.added_tool_names),
-        is_error=is_error,
+    message = ToolResultMessage(
+        tool_call_id=outcome.call.id,
+        tool_name=outcome.call.name,
+        content=copy.deepcopy(outcome.result.content),
+        details=copy.deepcopy(outcome.result.details),
+        usage=copy.deepcopy(outcome.result.usage),
+        added_tool_names=copy.deepcopy(outcome.result.added_tool_names),
+        is_error=outcome.is_error,
     )
+    await stream.emit(MessageStartEvent(copy.deepcopy(message)))
+    await stream.emit(MessageEndEvent(copy.deepcopy(message)))
+    return message
 
 
 def _failed_tool_result(message: str) -> AgentToolResult:
     return AgentToolResult(content=[TextContent(message)], details={})
+
+
+def _apply_turn_update(
+    update: AgentLoopTurnUpdate,
+    *,
+    context: AgentContext,
+    model: Model,
+    thinking_level: Any,
+) -> tuple[AgentContext, Model, Any]:
+    return (
+        update.context or context,
+        update.model or model,
+        update.thinking_level or thinking_level,
+    )
 
 
 async def _finish_after_loop_failure(
@@ -475,11 +862,11 @@ async def _finish_after_loop_failure(
         error_message=message,
         usage=Usage.zero(),
     )
-    stream.push(MessageStartEvent(copy.deepcopy(error)))
-    stream.push(MessageEndEvent(copy.deepcopy(error)))
+    await stream.emit(MessageStartEvent(copy.deepcopy(error)))
+    await stream.emit(MessageEndEvent(copy.deepcopy(error)))
     context.messages.append(error)
-    stream.push(TurnEndEvent(copy.deepcopy(error), []))
-    stream.push(AgentEndEvent([*copy.deepcopy(new_messages), copy.deepcopy(error)]))
+    await stream.emit(TurnEndEvent(copy.deepcopy(error), []))
+    await stream.emit(AgentEndEvent([*copy.deepcopy(new_messages), copy.deepcopy(error)]))
 
 
 def _raise_if_cancelled(signal: CancellationToken | None) -> None:

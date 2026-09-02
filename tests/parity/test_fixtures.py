@@ -16,7 +16,7 @@ def test_manifest_and_executed_upstream_fixtures_are_consistent() -> None:
     ids = [scenario["id"] for scenario in manifest["scenarios"]]
     assert len(ids) == len(set(ids)) == 30
     fixtures = [scenario for scenario in manifest["scenarios"] if "fixture" in scenario]
-    assert len(fixtures) == 10
+    assert len(fixtures) == 20
     for scenario in fixtures:
         records = load_jsonl(Path("fixtures") / scenario["fixture"])
         validate_fixture(records)

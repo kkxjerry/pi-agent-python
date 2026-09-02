@@ -73,6 +73,24 @@ export const scenarios: Record<string, Scenario> = {
     ])));
   },
 
+  async thinking_stream() {
+    const context: AgentContext = { systemPrompt: "fixture", messages: [], tools: [] };
+    return collect(
+      agentLoop(
+        [user("think")],
+        context,
+        baseConfig(),
+        undefined,
+        scriptedStream([
+          assistant([
+            { type: "thinking", thinking: "inspect" },
+            { type: "text", text: "answer" },
+          ]),
+        ]),
+      ),
+    );
+  },
+
   async single_tool() {
     const context: AgentContext = { systemPrompt: "fixture", messages: [], tools: [echoTool()] };
     const stream = scriptedStream([
@@ -80,6 +98,51 @@ export const scenarios: Record<string, Scenario> = {
       assistant([{ type: "text", text: "done" }]),
     ]);
     return collect(agentLoop([user("echo one")], context, baseConfig(), undefined, stream));
+  },
+
+  async sequential_tool() {
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [echoTool({ delayFirst: true })],
+    };
+    const config: AgentLoopConfig = { ...baseConfig(), toolExecution: "sequential" };
+    const stream = scriptedStream([
+      assistant([
+        { type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "first" } },
+        { type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "second" } },
+      ], "toolUse"),
+      assistant([{ type: "text", text: "done" }]),
+    ]);
+    return collect(agentLoop([user("echo sequentially")], context, config, undefined, stream));
+  },
+
+  async per_tool_sequential_override() {
+    const sequentialTool: AgentTool<typeof echoSchema, { value: string }> = {
+      ...echoTool({ delayFirst: true }),
+      executionMode: "sequential",
+    };
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [sequentialTool],
+    };
+    const stream = scriptedStream([
+      assistant([
+        { type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "first" } },
+        { type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "second" } },
+      ], "toolUse"),
+      assistant([{ type: "text", text: "done" }]),
+    ]);
+    return collect(
+      agentLoop(
+        [user("echo with override")],
+        context,
+        { ...baseConfig(), toolExecution: "parallel" },
+        undefined,
+        stream,
+      ),
+    );
   },
 
   async parallel_out_of_order() {
@@ -120,6 +183,112 @@ export const scenarios: Record<string, Scenario> = {
     return collect(agentLoop([user("call missing")], context, baseConfig(), undefined, stream));
   },
 
+  async invalid_tool_arguments() {
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [echoTool()],
+    };
+    const stream = scriptedStream([
+      assistant([{ type: "toolCall", id: "tool-1", name: "echo", arguments: {} }], "toolUse"),
+      assistant([{ type: "text", text: "recovered" }]),
+    ]);
+    return collect(agentLoop([user("invalid args")], context, baseConfig(), undefined, stream));
+  },
+
+  async tool_progress_update() {
+    const progressTool: AgentTool<typeof echoSchema, Record<string, unknown>> = {
+      ...echoTool(),
+      async execute(_toolCallId, params, _signal, onUpdate) {
+        onUpdate?.({
+          content: [{ type: "text", text: "half" }],
+          details: { progress: 0.5 },
+        });
+        return {
+          content: [{ type: "text", text: `echoed:${params.value}` }],
+          details: { value: params.value },
+        };
+      },
+    };
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [progressTool],
+    };
+    const stream = scriptedStream([
+      assistant([{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "one" } }], "toolUse"),
+      assistant([{ type: "text", text: "done" }]),
+    ]);
+    return collect(agentLoop([user("progress")], context, baseConfig(), undefined, stream));
+  },
+
+  async before_tool_call_block() {
+    let executed = false;
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [echoTool({ onExecute: () => { executed = true; } })],
+    };
+    const config: AgentLoopConfig = {
+      ...baseConfig(),
+      beforeToolCall: async () => ({ block: true, reason: "policy blocked" }),
+    };
+    const stream = scriptedStream([
+      assistant([{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "one" } }], "toolUse"),
+      assistant([{ type: "text", text: "recovered" }]),
+    ]);
+    return collect(
+      agentLoop([user("blocked")], context, config, undefined, stream),
+      { executed },
+    );
+  },
+
+  async after_tool_call_override() {
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [echoTool()],
+    };
+    const config: AgentLoopConfig = {
+      ...baseConfig(),
+      afterToolCall: async () => ({
+        content: [{ type: "text", text: "overridden" }],
+        details: { replacement: true },
+        isError: true,
+      }),
+    };
+    const stream = scriptedStream([
+      assistant([{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "one" } }], "toolUse"),
+      assistant([{ type: "text", text: "done" }]),
+    ]);
+    return collect(agentLoop([user("override")], context, config, undefined, stream));
+  },
+
+  async terminate_all_tool_results() {
+    const terminating: AgentTool<typeof echoSchema, { value: string }> = {
+      ...echoTool(),
+      async execute(_toolCallId, params) {
+        return {
+          content: [{ type: "text", text: `stop:${params.value}` }],
+          details: { value: params.value },
+          terminate: true,
+        };
+      },
+    };
+    const context: AgentContext = {
+      systemPrompt: "fixture",
+      messages: [],
+      tools: [terminating],
+    };
+    const stream = scriptedStream([
+      assistant([
+        { type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "one" } },
+        { type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "two" } },
+      ], "toolUse"),
+    ]);
+    return collect(agentLoop([user("terminate")], context, baseConfig(), undefined, stream));
+  },
+
   async tool_throws_exception() {
     const failing: AgentTool<typeof echoSchema, Record<string, never>> = {
       name: "echo",
@@ -152,6 +321,28 @@ export const scenarios: Record<string, Scenario> = {
     return collect(
       agentLoop([user("truncated")], context, baseConfig(), undefined, stream),
       { executedValues: executed },
+    );
+  },
+
+  async provider_error() {
+    const context: AgentContext = { systemPrompt: "fixture", messages: [], tools: [] };
+    const failure = {
+      ...assistant([], "error"),
+      errorMessage: "provider down",
+    };
+    return collect(
+      agentLoop([user("fail")], context, baseConfig(), undefined, scriptedStream([failure])),
+    );
+  },
+
+  async provider_abort() {
+    const context: AgentContext = { systemPrompt: "fixture", messages: [], tools: [] };
+    const failure = {
+      ...assistant([], "aborted"),
+      errorMessage: "provider aborted",
+    };
+    return collect(
+      agentLoop([user("abort")], context, baseConfig(), undefined, scriptedStream([failure])),
     );
   },
 

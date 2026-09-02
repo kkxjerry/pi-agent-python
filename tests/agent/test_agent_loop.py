@@ -417,7 +417,7 @@ async def test_serial_tool_results_emit_immediately_and_terminate_requires_every
         agent_loop(
             [UserMessage("go")],
             AgentContext(tools=[tool]),
-            config(model),
+            config(model, tool_execution="sequential"),
             stream_fn=provider.stream,
         )
     )
