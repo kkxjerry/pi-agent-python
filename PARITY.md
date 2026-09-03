@@ -37,3 +37,8 @@ Legend: `DONE` = implemented and covered by executable local evidence, `BOUNDARY
 The pinned TypeScript runner has executed 20 deterministic scenarios. Python parity tests preserve event ordering, queue injection positions, stop reasons, ToolCall IDs, ToolResult IDs, tool completion order, and transcript order. Timestamps, random IDs not fixed by a scenario, and provider token counts remain normalized.
 
 Phase 13–20 storage and product-mode behavior is tested against the documented and source-mapped upstream contracts. New golden files are not labelled `upstream-execution` unless the pinned TypeScript implementation itself was executed for that exact scenario.
+
+| Phase 21 credential storage/refresh | SOURCE | `tests/coding_agent/test_auth.py` |
+| Phase 22 extension activation/lifecycle | SOURCE | `tests/coding_agent/test_extensions.py` |
+| Phase 23 package manager/integrity lock | SOURCE | `tests/coding_agent/test_packages.py` |
+| Phase 24 AgentSession extension/package runtime | SOURCE | `tests/coding_agent/test_runtime_extensions.py` |

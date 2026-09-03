@@ -18,11 +18,14 @@ from .agent_session import (
     SessionStats,
     ThinkingLevelChangedEvent,
 )
+from .auth import AuthStorage, Credential, CredentialResolver
 from .configuration import (
     build_compaction_settings,
     build_resource_loader_config,
     session_directory,
 )
+from .extensions import ExtensionHost, ExtensionPolicy
+from .model_access import ModelAccess, PreparedModel
 from .modes import (
     PrintModeOptions,
     RpcServer,
@@ -33,6 +36,12 @@ from .modes import (
     run_rpc_stdio,
     serialize_json_line,
     to_json_event,
+)
+from .packages import PackageManager, PackageManifest
+from .runtime import (
+    CodingAgentRuntime,
+    CodingAgentRuntimeOptions,
+    create_coding_agent_runtime,
 )
 from .sdk import (
     CreateAgentSessionOptions,
@@ -55,8 +64,7 @@ from .settings import (
     save_settings_file,
 )
 
-# The Phase 17 draft exposed this shorter name. Keep it as a source-compatible
-# alias while the canonical Phase 21 SDK uses CreateAgentSessionOptions.
+# Compatibility aliases retained from the Phase 17 public surface.
 AgentSessionOptions = CreateAgentSessionOptions
 Settings = SettingsSnapshot
 SettingSource = SettingOrigin
@@ -77,12 +85,23 @@ __all__ = [
     "AgentSessionOptions",
     "AgentSessionState",
     "AgentSettledEvent",
+    "AuthStorage",
+    "CodingAgentRuntime",
+    "CodingAgentRuntimeOptions",
     "CompactionEndEvent",
     "CompactionRunResult",
     "CompactionStartEvent",
     "CreateAgentSessionOptions",
     "CreateAgentSessionResult",
+    "Credential",
+    "CredentialResolver",
     "EntryAppendedEvent",
+    "ExtensionHost",
+    "ExtensionPolicy",
+    "ModelAccess",
+    "PackageManager",
+    "PackageManifest",
+    "PreparedModel",
     "PrintModeOptions",
     "PromptOptions",
     "QueueUpdateEvent",
@@ -103,6 +122,7 @@ __all__ = [
     "build_resource_loader_config",
     "create_agent_session",
     "create_agent_session_only",
+    "create_coding_agent_runtime",
     "create_model_summarizer",
     "load_settings_file",
     "parse_json_line",

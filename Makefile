@@ -1,4 +1,4 @@
-.PHONY: sync format format-check lint type test phase-0-3 phase-8-12 phase-17-20 check build
+.PHONY: sync format format-check lint type test phase-0-3 phase-8-12 phase-17-20 phase-21-24 check build
 
 sync:
 	uv sync --all-groups
@@ -27,7 +27,7 @@ phase-8-12:
 phase-17-20:
 	python3.11 scripts/check_phase_17_20.py
 
-check:
+check: phase-21-24
 	uv lock --check
 	$(MAKE) format-check
 	$(MAKE) lint
@@ -40,3 +40,6 @@ check:
 
 build:
 	uv build
+
+phase-21-24:
+	uv run python scripts/check_phase_21_24.py

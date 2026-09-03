@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pi-agent-python"
-version = "0.4.0.dev0"
+version = "0.5.0.dev0"
 description = "Python reimplementation of the official TypeScript pi agent toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -31,6 +31,7 @@ dev = [
 
 [project.scripts]
 pi-py = "pi_agent.cli:main"
+pi-pkg = "pi_agent.coding_agent.package_cli:main"
 
 [project.urls]
 Upstream = "https://github.com/earendil-works/pi"

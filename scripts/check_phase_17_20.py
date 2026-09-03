@@ -41,7 +41,7 @@ REQUIRED = [
     "src/pi_agent/coding_agent/events.py",
     "src/pi_agent/coding_agent/modes/print.py",
     "src/pi_agent/coding_agent/modes/json.py",
-    "src/pi_agent/coding_agent/modes/rpc.py",
+    "src/pi_agent/coding_agent/modes/rpc/server.py",
     "tests/session/test_session_manager.py",
     "tests/harness/test_compaction.py",
     "tests/harness/test_resource_loader.py",
@@ -60,8 +60,12 @@ def main() -> int:
     missing = [path for path in REQUIRED if not (ROOT / path).is_file()]
     if missing:
         fail(f"missing files: {', '.join(missing)}")
-    if not __version__.startswith("0.4."):
-        fail(f"expected a Phase 17-20 development version, got {__version__}")
+    try:
+        version_floor = tuple(int(part) for part in __version__.split(".")[:2])
+    except ValueError:
+        fail(f"could not parse project version {__version__!r}")
+    if version_floor < (0, 4):
+        fail(f"expected version 0.4 or newer, got {__version__}")
     manifest = json.loads((ROOT / "fixtures/manifest.json").read_text(encoding="utf-8"))
     scenarios = manifest.get("scenarios", [])
     executed = [

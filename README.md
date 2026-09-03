@@ -136,3 +136,40 @@ git diff --check
 ```
 
 The default local execution environment is not a sandbox. Tools run with the permissions of the Python process.
+
+
+## Credentials, extensions, and packages
+
+Phase 21–24 adds a product layer above `AgentSession`:
+
+```python
+from pi_agent.coding_agent.product import (
+    CodingAgentRuntime,
+    CodingAgentRuntimeOptions,
+)
+
+runtime = CodingAgentRuntime(
+    session,
+    options=CodingAgentRuntimeOptions(
+        package_root="~/.pi/agent",
+        extension_paths=(project_extension,),
+    ),
+)
+await runtime.start()
+result = await runtime.invoke_command("my-extension.command", ["argument"])
+await runtime.close()
+```
+
+Local package operations are also available headlessly:
+
+```bash
+pi-pkg install ./my-pi-package
+pi-pkg list
+pi-pkg verify
+pi-pkg update my-package ./my-pi-package
+pi-pkg remove my-package
+```
+
+Packages are staged and integrity-locked. Phase 23 does not execute install scripts or download registry content. Python extensions are trusted in-process code; capability policy is a load gate, not process isolation.
+
+Package mutations are coordinated with extension-host reload: install, update, and remove keep enough backup state to restore the prior package set when candidate extension activation fails.

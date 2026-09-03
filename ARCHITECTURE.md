@@ -140,3 +140,22 @@ RPC    command responses + streamed events + notifications over JSONL
 ```
 
 RPC serializes all output behind one asynchronous lock and acknowledges an accepted prompt before starting the run task. Interactive TUI remains a later layer over the same session API.
+
+
+## Credential, extension, and package boundary
+
+Phase 21–24 preserves this dependency direction:
+
+```text
+pi_agent.ai / pi_agent.agent / pi_agent.harness
+                    ↓
+              AgentSession
+                    ↓
+      CodingAgentRuntime (product layer)
+          ↙          ↓           ↘
+   AuthStorage  ExtensionHost  PackageManager
+```
+
+`AuthStorage`, extension import, and package mutation never flow into Agent Core. An extension first registers contributions in an isolated staging object. Only a fully successful activation becomes visible. Package replacement similarly retains a backup and prior lock entry until a complete candidate ExtensionHost and package-aware resource reload succeed; stale receipts cannot roll back a newer cross-process update.
+
+Python extensions are trusted code in the host process. Path/capability policy prevents accidental activation outside configured roots, but it does not claim operating-system sandboxing.

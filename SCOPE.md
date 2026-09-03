@@ -47,3 +47,12 @@ PaiCLI, Java ports, LangChain, LangGraph, AutoGen, and other agent frameworks ar
 ## Security boundary
 
 The default local execution environment uses the permissions of the Python process. It is not a sandbox. Filesystem restrictions, command policies, containers, and approval workflows belong in later optional environments/extensions rather than being silently presented as core guarantees.
+
+### Credentials, extensions, packages, and product integration
+
+- process-safe API-key/OAuth credential persistence and refresh coordination;
+- Python-native extension registration, transactional activation/reload, event delivery, and disposal;
+- local package manifests, dependency checks, integrity lock, atomic install/update/remove, and rollback;
+- `CodingAgentRuntime` integration with AgentSession tools, prompts, commands, resources, and package lifecycle;
+- headless `pi-pkg` command.
+

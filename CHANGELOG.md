@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0.dev0
+
+- Added process-safe credential storage, redacted credential metadata, environment resolution, and single-flight OAuth refresh.
+- Added a Python-native extension API with deterministic ordering, contribution collision checks, transactional activation, rollback, reload, event delivery, and reverse-order disposal.
+- Added local package manifests, dependency validation, staging, atomic install/update/remove, integrity locking, verification, rollback receipts for install/update/remove, and stale-transaction protection.
+- Added `CodingAgentRuntime` to transactionally attach extension tools, prompts, commands, package resources, package lifecycle, and credentials to one `AgentSession` without importing product concerns into Agent Core.
+- Added the `pi-pkg` headless package-management command.
+- Removed the unreachable `modes/rpc.py` duplicate that was shadowed by the canonical `modes/rpc/` package.
+
 ## 0.4.0.dev0
 
 - Added the shared `AgentSession` product API over Agent, execution environment, resources, settings, JSONL persistence, session-tree navigation, and compaction.
