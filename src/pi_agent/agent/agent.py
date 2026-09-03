@@ -328,6 +328,15 @@ class Agent:
         return tuple(self._listener_errors)
 
     @property
+    def prepare_next_turn(self) -> PrepareNextTurn | None:
+        return self._config.prepare_next_turn
+
+    @prepare_next_turn.setter
+    def prepare_next_turn(self, value: PrepareNextTurn | None) -> None:
+        self._ensure_idle("change next-turn preparation")
+        self._config.prepare_next_turn = value
+
+    @property
     def signal(self) -> CancellationToken | None:
         return self._active_signal
 

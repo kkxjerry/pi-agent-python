@@ -59,8 +59,8 @@ def main() -> int:
     ).stdout.strip()
     if branch != "develop":
         fail(f"work must be on develop, got {branch!r}")
-    if not __version__.startswith("0.3."):
-        fail(f"expected a Phase 8-12 development version, got {__version__}")
+    if not __version__.startswith(("0.3.", "0.4.")):
+        fail(f"expected a Phase 8-12-or-later development version, got {__version__}")
     if not all((Agent, AgentLoopConfig, AgentTool, AgentHarness, create_coding_tools)):
         fail("public runtime imports are incomplete")
     print(

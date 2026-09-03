@@ -1,37 +1,53 @@
-"""Product-layer configuration primitives for the Python pi coding agent."""
+"""Product-level AgentSession, configuration, and headless modes."""
 
+from .agent_session import AgentSession, AgentSessionOptions, create_agent_session
 from .configuration import (
-    build_compaction_settings,
-    build_resource_loader_config,
-    session_directory,
+    compaction_settings_from_settings,
+    load_settings,
+    model_from_settings,
+    resource_loader_from_settings,
+    stream_options_from_settings,
 )
+from .events import agent_event_to_dict, assistant_event_to_dict, tool_result_to_dict
+from .modes import RpcProtocolError, RpcServer, run_json_mode, run_print_mode, run_rpc_mode
 from .settings import (
-    DEFAULT_ENV_KEYS,
     DEFAULT_SPECS,
-    SettingOrigin,
-    SettingsError,
+    SettingSource,
     SettingSpec,
+    Settings,
     SettingsResolver,
-    SettingsSnapshot,
     SettingsStore,
-    SettingsWarning,
+    flatten,
     load_settings_file,
     save_settings_file,
+    unflatten,
 )
 
 __all__ = [
-    "DEFAULT_ENV_KEYS",
     "DEFAULT_SPECS",
-    "SettingOrigin",
+    "AgentSession",
+    "AgentSessionOptions",
+    "RpcProtocolError",
+    "RpcServer",
+    "SettingSource",
     "SettingSpec",
-    "SettingsError",
+    "Settings",
     "SettingsResolver",
-    "SettingsSnapshot",
     "SettingsStore",
-    "SettingsWarning",
-    "build_compaction_settings",
-    "build_resource_loader_config",
+    "agent_event_to_dict",
+    "assistant_event_to_dict",
+    "compaction_settings_from_settings",
+    "create_agent_session",
+    "flatten",
+    "load_settings",
     "load_settings_file",
+    "model_from_settings",
+    "resource_loader_from_settings",
+    "run_json_mode",
+    "run_print_mode",
+    "run_rpc_mode",
     "save_settings_file",
-    "session_directory",
+    "stream_options_from_settings",
+    "tool_result_to_dict",
+    "unflatten",
 ]

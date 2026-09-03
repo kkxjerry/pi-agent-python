@@ -1,316 +1,288 @@
 from __future__ import annotations
 
-import shutil
-from dataclasses import dataclass
+import asyncio
+import json
+import os
 from pathlib import Path
+from typing import Any
 
-from pi_agent.ai import Message
+from pi_agent.ai import Message, Model, message_to_dict
 
-from .store import (
-    InMemorySessionStore,
-    JsonlSessionStore,
-    SessionError,
-    SessionLoadResult,
-    SessionStore,
-)
-from .tree import SessionTree
-from .types import (
-    BranchSummaryEntry,
-    CompactionEntry,
-    CursorEntry,
-    CustomEntry,
-    LabelEntry,
-    MessageEntry,
-    ModelChangeEntry,
-    SessionHeader,
-    ThinkingLevelChangeEntry,
-    TreeEntry,
-    new_entry_id,
-)
-
-
-@dataclass(slots=True, frozen=True)
-class SessionInfo:
-    id: str
-    path: Path
-    cwd: str
-    name: str | None
-    modified_ns: int
-    leaf_count: int
-    entry_count: int
-    warnings: tuple[str, ...] = ()
+from .context import active_branch, build_model_context
+from .store import JsonlSessionStore, MemorySessionStore, SessionStore
+from .types import SessionDocument, SessionEntry, SessionHeader, SessionInfo, SessionTreeNode
 
 
 class SessionManager:
-    def __init__(self, store: SessionStore) -> None:
+    """Mutable cursor over an append-only session tree."""
+
+    def __init__(self, store: SessionStore, document: SessionDocument) -> None:
         self.store = store
-        self._loaded = store.load()
-        self.tree = SessionTree(self._loaded.records)
+        self.document = document
+        self._current_id = document.current_id()
+        self._lock = asyncio.Lock()
 
     @classmethod
-    def create(
+    async def create(
         cls,
         path: str | Path,
         *,
-        cwd: str,
+        cwd: str | Path,
         name: str | None = None,
-        session_id: str | None = None,
-        parent_session_id: str | None = None,
         fsync: bool = False,
     ) -> SessionManager:
-        header = SessionHeader(
-            id=session_id or new_entry_id("session"),
-            cwd=cwd,
-            name=name,
-            parent_session_id=parent_session_id,
-        )
-        return cls(JsonlSessionStore.create(path, header, fsync=fsync))
+        store = JsonlSessionStore(path, fsync=fsync)
+        document = await store.create(SessionHeader.create(cwd, name=name))
+        return cls(store, document)
 
     @classmethod
-    def in_memory(
+    async def open(
+        cls,
+        path: str | Path,
+        *,
+        fsync: bool = False,
+        repair_tail: bool = False,
+    ) -> SessionManager:
+        store = JsonlSessionStore(path, fsync=fsync)
+        document = await store.load(allow_corrupt_tail=repair_tail)
+        if document.corrupt_tail is not None:
+            if not repair_tail:
+                raise ValueError("session has a corrupt final JSONL record")
+            document = await store.repair_tail()
+        return cls(store, document)
+
+    @classmethod
+    async def memory(
         cls,
         *,
-        cwd: str,
+        cwd: str | Path,
         name: str | None = None,
-        session_id: str | None = None,
     ) -> SessionManager:
-        header = SessionHeader(id=session_id or new_entry_id("session"), cwd=cwd, name=name)
-        return cls(InMemorySessionStore([header]))
+        store = MemorySessionStore()
+        document = await store.create(SessionHeader.create(cwd, name=name))
+        return cls(store, document)
 
     @property
-    def header(self) -> SessionHeader:
-        return self.tree.header
+    def path(self) -> Path | None:
+        return self.store.path
 
     @property
-    def leaf_id(self) -> str | None:
-        return self.tree.leaf_id
+    def current_id(self) -> str | None:
+        return self._current_id
 
     @property
-    def warnings(self) -> tuple[str, ...]:
-        return tuple(warning.message for warning in self._loaded.warnings)
-
-    def reload(self) -> SessionLoadResult:
-        self._loaded = self.store.load()
-        self.tree = SessionTree(self._loaded.records)
-        return self._loaded
-
-    def _append(self, entry: TreeEntry) -> TreeEntry:
-        self.store.append(entry)
-        self.store.append(CursorEntry(entry.id))
-        self.reload()
-        return entry
-
-    def append_message(self, message: Message, *, entry_id: str | None = None) -> MessageEntry:
-        return self._append(
-            MessageEntry(entry_id or new_entry_id("message"), self.leaf_id, message)
-        )  # type: ignore[return-value]
-
-    def append_model_change(
-        self, provider: str, model_id: str, *, entry_id: str | None = None
-    ) -> ModelChangeEntry:
-        return self._append(
-            ModelChangeEntry(entry_id or new_entry_id("model"), self.leaf_id, provider, model_id)
-        )  # type: ignore[return-value]
-
-    def append_thinking_level(
-        self, thinking_level: str, *, entry_id: str | None = None
-    ) -> ThinkingLevelChangeEntry:
-        return self._append(
-            ThinkingLevelChangeEntry(
-                entry_id or new_entry_id("thinking"), self.leaf_id, thinking_level
-            )
-        )  # type: ignore[return-value]
-
-    def append_compaction(
-        self,
-        summary: str,
-        *,
-        first_kept_entry_id: str | None,
-        tokens_before: int,
-        tokens_after: int,
-        details: dict[str, object] | None = None,
-        entry_id: str | None = None,
-    ) -> CompactionEntry:
-        return self._append(
-            CompactionEntry(
-                entry_id or new_entry_id("compaction"),
-                self.leaf_id,
-                summary,
-                first_kept_entry_id,
-                tokens_before,
-                tokens_after,
-                dict(details or {}),
-            )
-        )  # type: ignore[return-value]
-
-    def append_branch_summary(
-        self,
-        summary: str,
-        *,
-        from_entry_id: str,
-        to_entry_id: str,
-        details: dict[str, object] | None = None,
-        entry_id: str | None = None,
-    ) -> BranchSummaryEntry:
-        return self._append(
-            BranchSummaryEntry(
-                entry_id or new_entry_id("branch"),
-                self.leaf_id,
-                summary,
-                from_entry_id,
-                to_entry_id,
-                dict(details or {}),
-            )
-        )  # type: ignore[return-value]
-
-    def append_custom(
-        self,
-        custom_type: str,
-        data: dict[str, object],
-        *,
-        entry_id: str | None = None,
-    ) -> CustomEntry:
-        return self._append(
-            CustomEntry(entry_id or new_entry_id("custom"), self.leaf_id, custom_type, dict(data))
-        )  # type: ignore[return-value]
-
-    def set_label(
-        self, target_id: str, label: str | None, *, entry_id: str | None = None
-    ) -> LabelEntry:
-        if target_id != self.header.id and target_id not in self.tree.entries:
-            raise SessionError(f"cannot label unknown target {target_id}")
-        return self._append(
-            LabelEntry(entry_id or new_entry_id("label"), self.leaf_id, target_id, label)
-        )  # type: ignore[return-value]
-
-    def navigate(self, entry_id: str | None, *, persist: bool = True) -> None:
-        if entry_id is not None:
-            self.tree.get(entry_id)
-        if persist:
-            self.store.append(CursorEntry(entry_id))
-            self.reload()
-        else:
-            self.tree.leaf_id = entry_id
-
-    def fork(self, entry_id: str | None) -> None:
-        """Move the cursor; the next appended entry creates a new branch."""
-
-        self.navigate(entry_id)
-
-    def active_messages(self) -> list[Message]:
-        return self.tree.active_path().messages
-
-    def active_entries(self) -> tuple[TreeEntry, ...]:
-        return self.tree.active_path().entries
-
-
-class SessionRepository:
-    def __init__(self, directory: str | Path, *, suffix: str = ".jsonl") -> None:
-        self.directory = Path(directory)
-        self.suffix = suffix
-
-    def _path_for(self, session_id: str) -> Path:
-        if not session_id or any(char in session_id for char in ("/", "\\", "\0")):
-            raise SessionError("invalid session id")
-        return self.directory / f"{session_id}{self.suffix}"
-
-    def create(
-        self,
-        *,
-        cwd: str,
-        name: str | None = None,
-        session_id: str | None = None,
-        parent_session_id: str | None = None,
-    ) -> SessionManager:
-        actual_id = session_id or new_entry_id("session")
-        self.directory.mkdir(parents=True, exist_ok=True)
-        return SessionManager.create(
-            self._path_for(actual_id),
-            cwd=cwd,
-            name=name,
-            session_id=actual_id,
-            parent_session_id=parent_session_id,
+    def info(self) -> SessionInfo:
+        timestamps = [
+            self.document.header.created_at,
+            *(entry.timestamp for entry in self.document.entries),
+        ]
+        return SessionInfo(
+            id=self.document.header.id,
+            path=self.path,
+            cwd=self.document.header.cwd,
+            name=self.document.header.name,
+            created_at=self.document.header.created_at,
+            updated_at=max(timestamps),
+            entry_count=len([entry for entry in self.document.entries if entry.type != "cursor"]),
+            current_id=self._current_id,
         )
 
-    def open(self, session_id: str) -> SessionManager:
-        return SessionManager(JsonlSessionStore(self._path_for(session_id)))
+    async def append_entry(
+        self,
+        entry_type: str,
+        data: dict[str, Any] | None = None,
+        *,
+        parent_id: str | None | object = ...,
+    ) -> SessionEntry:
+        async with self._lock:
+            parent = self._current_id if parent_id is ... else parent_id
+            entry = SessionEntry.create(
+                entry_type,  # type: ignore[arg-type]
+                parent_id=parent if isinstance(parent, str) or parent is None else None,
+                data=data,
+            )
+            await self.store.append(entry)
+            self.document.entries.append(entry)
+            if entry.type != "cursor":
+                self._current_id = entry.id
+            return entry
 
-    def list(self) -> list[SessionInfo]:
-        if not self.directory.exists():
-            return []
-        result: list[SessionInfo] = []
-        for path in sorted(self.directory.glob(f"*{self.suffix}")):
-            try:
-                manager = SessionManager(JsonlSessionStore(path))
-                stat = path.stat()
-                result.append(
-                    SessionInfo(
-                        id=manager.header.id,
-                        path=path,
-                        cwd=manager.header.cwd,
-                        name=manager.tree.labels().get(manager.header.id, manager.header.name),
-                        modified_ns=stat.st_mtime_ns,
-                        leaf_count=len(manager.tree.leaf_ids()),
-                        entry_count=len(manager.tree.entries),
-                        warnings=manager.warnings,
-                    )
-                )
-            except SessionError as exc:
-                stat = path.stat()
-                result.append(
-                    SessionInfo(
-                        id=path.stem,
-                        path=path,
-                        cwd="",
-                        name=None,
-                        modified_ns=stat.st_mtime_ns,
-                        leaf_count=0,
-                        entry_count=0,
-                        warnings=(str(exc),),
-                    )
-                )
-        result.sort(key=lambda item: item.modified_ns, reverse=True)
-        return result
+    async def append_message(self, message: Message) -> SessionEntry:
+        async with self._lock:
+            entry = SessionEntry.for_message(message, parent_id=self._current_id)
+            await self.store.append(entry)
+            self.document.entries.append(entry)
+            self._current_id = entry.id
+            return entry
 
-    def delete(self, session_id: str) -> None:
-        path = self._path_for(session_id)
-        try:
-            path.unlink()
-        except FileNotFoundError as exc:
-            raise SessionError(f"session does not exist: {session_id}") from exc
+    async def record_model(self, model: Model) -> SessionEntry:
+        return await self.append_entry(
+            "model_change",
+            {
+                "provider": model.provider,
+                "modelId": model.id,
+                "api": model.api,
+                "baseUrl": model.base_url,
+            },
+        )
 
-    def rename(self, session_id: str, name: str | None) -> None:
-        manager = self.open(session_id)
-        manager.set_label(manager.header.id, name)
+    async def record_thinking_level(self, level: str) -> SessionEntry:
+        return await self.append_entry("thinking_level_change", {"thinkingLevel": level})
 
-    def export(self, session_id: str, destination: str | Path) -> Path:
-        source = self._path_for(session_id)
-        if not source.is_file():
-            raise SessionError(f"session does not exist: {session_id}")
-        target = Path(destination)
+    async def record_compaction(
+        self,
+        *,
+        summary: str,
+        first_kept_id: str | None,
+        usage: dict[str, Any] | None = None,
+        files: dict[str, list[str]] | None = None,
+    ) -> SessionEntry:
+        data: dict[str, Any] = {"summary": summary, "firstKeptId": first_kept_id}
+        if usage is not None:
+            data["usage"] = usage
+        if files is not None:
+            data["files"] = files
+        return await self.append_entry("compaction", data)
+
+    async def record_branch_summary(
+        self,
+        *,
+        summary: str,
+        from_id: str | None,
+        to_id: str | None,
+    ) -> SessionEntry:
+        return await self.append_entry(
+            "branch_summary",
+            {"summary": summary, "fromId": from_id, "toId": to_id},
+        )
+
+    async def record_custom(self, name: str, data: Any) -> SessionEntry:
+        return await self.append_entry("custom", {"name": name, "data": data})
+
+    async def label(self, label: str, *, entry_id: str | None = None) -> SessionEntry:
+        target = self._current_id if entry_id is None else entry_id
+        if target is not None and target not in self.entry_map:
+            raise KeyError(target)
+        return await self.append_entry("label", {"label": label, "entryId": target})
+
+    async def navigate(self, entry_id: str | None) -> None:
+        if entry_id is not None and entry_id not in self.entry_map:
+            raise KeyError(entry_id)
+        async with self._lock:
+            cursor = SessionEntry.create("cursor", parent_id=entry_id, data={})
+            await self.store.append(cursor)
+            self.document.entries.append(cursor)
+            self._current_id = entry_id
+
+    @property
+    def entry_map(self) -> dict[str, SessionEntry]:
+        return self.document.entry_map()
+
+    def active_entries(self) -> list[SessionEntry]:
+        return active_branch(self.document.entries, self._current_id)
+
+    def model_context(self) -> list[Message]:
+        return build_model_context(self.document.entries, self._current_id)
+
+    def tree(self) -> tuple[SessionTreeNode, ...]:
+        entries = [entry for entry in self.document.entries if entry.type != "cursor"]
+        children: dict[str | None, list[SessionEntry]] = {}
+        for entry in entries:
+            children.setdefault(entry.parent_id, []).append(entry)
+
+        def build(entry: SessionEntry) -> SessionTreeNode:
+            return SessionTreeNode(
+                entry=entry,
+                children=tuple(build(child) for child in children.get(entry.id, [])),
+            )
+
+        return tuple(build(entry) for entry in children.get(None, []))
+
+    def common_ancestor(self, left_id: str | None, right_id: str | None) -> str | None:
+        left = [entry.id for entry in active_branch(self.document.entries, left_id)]
+        right = [entry.id for entry in active_branch(self.document.entries, right_id)]
+        common: str | None = None
+        for left_entry, right_entry in zip(left, right, strict=False):
+            if left_entry != right_entry:
+                break
+            common = left_entry
+        return common
+
+    async def fork(
+        self,
+        path: str | Path,
+        *,
+        name: str | None = None,
+        fsync: bool = False,
+    ) -> SessionManager:
+        destination = Path(path).expanduser().resolve()
+        store = JsonlSessionStore(destination, fsync=fsync)
+        header = SessionHeader.create(
+            self.document.header.cwd, name=name or self.document.header.name
+        )
+        branch = self.active_entries()
+        await store.create(header)
+        for entry in branch:
+            await store.append(entry)
+        return await SessionManager.open(destination, fsync=fsync)
+
+    async def rename(self, name: str | None) -> None:
+        async with self._lock:
+            self.document.header = SessionHeader(
+                id=self.document.header.id,
+                cwd=self.document.header.cwd,
+                created_at=self.document.header.created_at,
+                version=self.document.header.version,
+                name=name,
+            )
+            await self.store.rewrite(self.document)
+
+    async def export(self, path: str | Path) -> Path:
+        target = Path(path).expanduser().resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        payload = {
+            "header": self.document.header.to_dict(),
+            "entries": [entry.to_dict() for entry in self.document.entries],
+            "currentId": self._current_id,
+        }
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        os.replace(temporary, target)
         return target
 
-    def import_file(self, source: str | Path, *, session_id: str | None = None) -> SessionManager:
-        loaded_store = JsonlSessionStore(source)
-        loaded = loaded_store.load()
-        imported_id = session_id or loaded.header.id
-        target = self._path_for(imported_id)
-        self.directory.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            raise SessionError(f"session already exists: {imported_id}")
-        if imported_id == loaded.header.id:
-            shutil.copyfile(source, target)
-            return self.open(imported_id)
-
-        header = SessionHeader(
-            id=imported_id,
-            cwd=loaded.header.cwd,
-            name=loaded.header.name,
-            parent_session_id=loaded.header.id,
+    @classmethod
+    async def import_file(
+        cls,
+        source: str | Path,
+        destination: str | Path,
+        *,
+        fsync: bool = False,
+    ) -> SessionManager:
+        payload = json.loads(Path(source).expanduser().read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not isinstance(payload.get("header"), dict):
+            raise ValueError("invalid exported session")
+        document = SessionDocument(
+            header=SessionHeader.from_dict(payload["header"]),
+            entries=[SessionEntry.from_dict(item) for item in payload.get("entries", [])],
         )
-        target_store = JsonlSessionStore.create(target, header)
-        for record in loaded.records[1:]:
-            target_store.append(record)
-        return self.open(imported_id)
+        store = JsonlSessionStore(destination, fsync=fsync)
+        await store.rewrite(document)
+        manager = cls(store, document)
+        current = payload.get("currentId")
+        if current is None or isinstance(current, str):
+            manager._current_id = current
+        return manager
+
+    async def delete(self) -> None:
+        if self.path is not None:
+            await asyncio.to_thread(self.path.unlink, missing_ok=True)
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "session": self.document.header.to_dict(),
+            "currentId": self._current_id,
+            "entries": [entry.to_dict() for entry in self.document.entries],
+            "messages": [message_to_dict(message) for message in self.model_context()],
+        }

@@ -1,44 +1,49 @@
 # Scope
 
-The project is a Python reimplementation of the pinned official TypeScript pi behavior. It is not source-compatible with TypeScript extensions and does not borrow architecture from PaiCLI, Java agents, LangChain, LangGraph, AutoGen, or CrewAI.
+The goal is a Python reimplementation of the pinned official pi behavior, not source compatibility with TypeScript extensions.
 
-## Implemented through Phase 16
+## Included through Phase 20
 
-### Foundation and parity evidence
+- pinned upstream metadata, source maps, and executed behavior contracts;
+- Python packaging, CI, lint, type, build, and test gates;
+- provider-neutral model/message/content/usage types and async provider streams;
+- Faux and OpenAI-compatible Chat Completions providers;
+- low-level prompt/continue loop, context conversion, tool validation, lifecycle hooks, and turn callbacks;
+- sequential/parallel tool batches with completion-order events and source-order ToolResult artifacts;
+- stateful Agent, ordered awaited subscribers, steering/follow-up queues, abort, and reuse;
+- injectable filesystem/shell execution environment;
+- read, write, edit, and bash coding tools;
+- session-independent AgentHarness;
+- append-only JSONL SessionManager with resume, navigation, branching, fork, import/export, and explicit corrupt-tail repair;
+- compaction and branch summaries with safe ToolCall/ToolResult boundaries;
+- user/project/explicit resource loading for context, systems prompts, skills, prompts, themes, extensions, and package manifests;
+- layered settings with source attribution and atomic JSON/TOML persistence;
+- one product-level AgentSession shared by SDK-style use, Print, JSON, and RPC modes;
+- LF-delimited RPC command responses, streamed events, and run notifications.
 
-- pinned upstream metadata and source map;
-- official TypeScript fixture runner and executed golden files;
-- Python packaging, CI, formatting, lint, strict typing, and test gates.
+## Deliberately not included yet
 
-### AI and low-level agent runtime
+- interactive TUI and terminal rendering;
+- executable Python extension activation and lifecycle hooks;
+- package install/update/remove workflows;
+- provider breadth and OAuth/subscription authentication beyond the current provider layer;
+- image preprocessing/resizing beyond supported direct read attachments;
+- telemetry exporters and remote observability;
+- a security sandbox or approval policy;
+- TypeScript extension source compatibility.
 
-- provider-neutral model/message/content/usage types;
-- asynchronous assistant and agent event streams;
-- deterministic faux provider;
-- OpenAI-compatible Chat Completions streaming adapter;
-- low-level agent loop, context transforms, message conversion, tool validation, and tool execution;
-- prior Phase 8–12 agent/tool/harness work already present on `develop` remains a prerequisite and is exercised by the full regression suite.
+## Source boundary
 
-### Session, compaction, resources, and settings
+Product design and behavior are derived only from the pinned official TypeScript baseline:
 
-- append-only JSONL session records and branch tree;
-- resume, navigation, fork, labels, list, import/export, rename, delete, and in-memory/no-session mode;
-- corrupt-tail recovery without hiding middle-file corruption;
-- compaction threshold, safe cut points, split-turn fallback, summaries, branch summaries, usage, hooks, and file-operation tracking;
-- layered resource discovery for context files, system prompts, skills, prompt templates, themes, extensions, and packages;
-- source-aware settings merge across defaults, global, project, environment, CLI, and runtime layers.
+```text
+earendil-works/pi
+v0.84.4
+b79e4cc
+```
 
-## Deliberately deferred
+PaiCLI, Java ports, LangChain, LangGraph, AutoGen, and other agent frameworks are not implementation references.
 
-- complete `AgentSession` product API;
-- Print, JSON, and RPC product modes;
-- Python extension activation and rollback;
-- package installation/update;
-- interactive TUI;
-- additional first-party providers and OAuth;
-- SQLite/remote session backends;
-- telemetry exporters and production sandbox policies.
+## Security boundary
 
-## Compatibility policy
-
-Behavioral parity is claimed only when backed by an executed upstream fixture or a source-mapped contract. Python-native resource and settings APIs preserve the upstream ownership and precedence model but do not claim TypeScript source compatibility.
+The default local execution environment uses the permissions of the Python process. It is not a sandbox. Filesystem restrictions, command policies, containers, and approval workflows belong in later optional environments/extensions rather than being silently presented as core guarantees.

@@ -1,39 +1,42 @@
-.PHONY: install format format-check lint typecheck test phase-0-3 phase-13-16 upstream-fixtures check build clean
+.PHONY: sync format format-check lint type test phase-0-3 phase-8-12 phase-17-20 check build
 
-install:
-	uv sync --all-extras
+sync:
+	uv sync --all-groups
 
 format:
-	uv run ruff format src tests scripts
+	uv run ruff format .
 
 format-check:
-	uv run ruff format --check src tests scripts
+	uv run ruff format --check .
 
 lint:
-	uv run ruff check src tests scripts
+	uv run ruff check .
 
-typecheck:
-	uv run mypy src
+type:
+	uv run mypy --strict src
 
 test:
 	uv run pytest -q
 
 phase-0-3:
-	uv run python scripts/check_phase_0_3.py
+	python3.11 scripts/check_phase_0_3.py
 
-phase-13-16:
-	uv run python scripts/check_phase_13_16.py
+phase-8-12:
+	python3.11 scripts/check_phase_8_12.py
 
-upstream-fixtures:
-	npm --prefix tools/upstream-fixtures run typecheck
-	rm -rf /tmp/pi-upstream-capture
-	npm --prefix tools/upstream-fixtures run capture -- --out /tmp/pi-upstream-capture
-	uv run python scripts/compare_upstream_capture.py /tmp/pi-upstream-capture
+phase-17-20:
+	python3.11 scripts/check_phase_17_20.py
 
-check: format-check lint typecheck test phase-0-3 phase-13-16
+check:
+	uv lock --check
+	$(MAKE) format-check
+	$(MAKE) lint
+	$(MAKE) type
+	$(MAKE) test
+	$(MAKE) phase-0-3
+	$(MAKE) phase-8-12
+	$(MAKE) phase-17-20
+	git diff --check
 
 build:
 	uv build
-
-clean:
-	rm -rf build dist .pytest_cache .mypy_cache .ruff_cache

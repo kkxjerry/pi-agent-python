@@ -1,14 +1,15 @@
-"""Low-level loop and stateful agent runtime."""
+"""Low-level loop, tool runtime, queues, and stateful Agent."""
 
 from .agent import Agent, AgentListener, AgentOptions, AgentState
 from .agent_loop import (
     agent_loop,
     agent_loop_continue,
     default_convert_to_llm,
+    execute_tool_batch,
     run_agent_loop,
     run_agent_loop_continue,
 )
-from .event_stream import AgentEventStream
+from .event_stream import AgentEventSink, AgentEventStream
 from .events import (
     AgentEndEvent,
     AgentEvent,
@@ -48,6 +49,7 @@ __all__ = [
     "AgentContext",
     "AgentEndEvent",
     "AgentEvent",
+    "AgentEventSink",
     "AgentEventStream",
     "AgentListener",
     "AgentLoopConfig",
@@ -78,6 +80,7 @@ __all__ = [
     "agent_loop",
     "agent_loop_continue",
     "default_convert_to_llm",
+    "execute_tool_batch",
     "run_agent_loop",
     "run_agent_loop_continue",
     "validate_json_schema",

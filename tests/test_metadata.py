@@ -9,7 +9,7 @@ from pi_agent.cli import main
 
 
 def test_version_and_upstream_are_pinned() -> None:
-    assert __version__ == "0.3.0.dev0"
+    assert __version__ == "0.4.0.dev0"
     assert UPSTREAM.repository == "earendil-works/pi"
     assert UPSTREAM.tag == "v0.84.4"
     assert UPSTREAM.commit == "b79e4cc"

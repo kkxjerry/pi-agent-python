@@ -2,16 +2,28 @@
 
 ## 0.4.0.dev0
 
-- Added append-only JSONL session records, validation, recoverable final-tail handling, branch navigation, labels, repository operations, and compacted-context reconstruction.
-- Added token estimation, safe compaction cut points, whole-batch split-turn fallback, iterative summaries, branch summaries, hooks, usage tracking, and model-boundary compaction control.
-- Added layered resource discovery for system/context prompts, skills, prompt templates, themes, extensions, and package manifests.
-- Added provenance-aware settings merge and explicit global/project persistence targets.
-- Added Phase 13–16 tests, structural gate, and audit documentation.
+- Added the shared `AgentSession` product API over Agent, execution environment, resources, settings, JSONL persistence, session-tree navigation, and compaction.
+- Added SDK construction with persistent or in-memory sessions, model restoration, resource loading, coding-tool composition, and model-backed summarization.
+- Added headless Print mode with final-text and JSONL event output.
+- Added stable JSON event serialization that omits cumulative partial snapshots while preserving tool-call identity and usage.
+- Added stdin/stdout JSONL RPC with background prompts, live steering/follow-up/abort, session and model controls, compaction, resources, tree inspection, and shell execution.
+- Added `pi-py -p`, `pi-py --mode json`, and `pi-py rpc` command-line entry points.
+- Added Phase 17–20 integration, lifecycle, compaction-boundary, RPC, and local SSE CLI tests.
+
+## 0.3.0.dev0
+
+- Added parallel tool batches with completion-order execution events and source-order ToolResult artifacts.
+- Added the reusable stateful `Agent`, ordered awaited listeners, steering/follow-up queues, abort, and post-abort reuse.
+- Added tool hooks, timeouts, termination hints, execution-environment interfaces, coding tools, and the session-independent harness.
+- Added append-only JSONL sessions, validation, recoverable final-tail handling, tree navigation, labels, and repository operations.
+- Added token estimation, safe compaction cut points, split-turn handling, iterative and branch summaries, hooks, usage tracking, and model-boundary compaction control.
+- Added layered resource discovery and provenance-aware settings resolution and persistence.
+- Added Phase 8–16 tests, structural gates, and audit documentation.
 
 ## 0.2.0.dev0
 
 - Rebuilt and accepted the Phase 0–3 local baseline.
 - Added provider-neutral AI types and serialization.
-- Added generic and assistant message event streams.
-- Added deterministic FauxProvider and OpenAI-compatible SSE provider.
+- Added generic and assistant-message event streams.
+- Added the deterministic Faux provider and OpenAI-compatible SSE provider.
 - Added the low-level agent loop, continue mode, context transformation, tool validation, tool execution, and error recovery.
