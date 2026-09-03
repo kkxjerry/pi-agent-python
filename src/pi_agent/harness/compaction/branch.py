@@ -1,46 +1,104 @@
 from __future__ import annotations
 
-import asyncio
 import inspect
+from collections.abc import Awaitable
+from dataclasses import dataclass
 from typing import TypeVar
 
-from pi_agent.ai import CancellationToken, Message, Usage
+from pi_agent.ai import Message, Usage
+from pi_agent.harness.session import (
+    BranchSummaryEntry,
+    MessageEntry,
+    SessionManager,
+    SessionTree,
+    TreeEntry,
+)
 
-from ..types import BranchSummaryError
-from .compaction import collect_file_operations
-from .types import BranchSummaryResult, Summarizer, SummaryResult
+from .compaction import serialize_conversation
+from .types import Summarizer, SummaryResponse
 
 T = TypeVar("T")
 
 
-async def generate_branch_summary(
-    messages: list[Message],
+@dataclass(slots=True, frozen=True)
+class BranchPreparation:
+    common_ancestor_id: str | None
+    from_entry_id: str
+    to_entry_id: str
+    entries: tuple[TreeEntry, ...]
+    messages: tuple[Message, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class BranchSummaryResult:
+    summary: str
+    usage: Usage
+    preparation: BranchPreparation
+
+
+def collect_entries_for_branch_summary(
+    tree: SessionTree,
     *,
+    from_entry_id: str,
+    to_entry_id: str,
+) -> BranchPreparation:
+    tree.get(from_entry_id)
+    tree.get(to_entry_id)
+    common = tree.common_ancestor(from_entry_id, to_entry_id)
+    source_path = list(tree.path_to(from_entry_id).entries)
+    start = 0
+    if common is not None:
+        start = next(index for index, entry in enumerate(source_path) if entry.id == common) + 1
+    entries = tuple(source_path[start:])
+    messages = tuple(entry.message for entry in entries if isinstance(entry, MessageEntry))
+    return BranchPreparation(common, from_entry_id, to_entry_id, entries, messages)
+
+
+async def generate_branch_summary(
+    preparation: BranchPreparation,
     summarizer: Summarizer,
-    previous_summary: str | None = None,
-    signal: CancellationToken | None = None,
-    from_id: str | None = None,
-    to_id: str | None = None,
 ) -> BranchSummaryResult:
-    if signal is not None and signal.cancelled:
-        raise BranchSummaryError("aborted", signal.reason)
-    try:
-        raw = summarizer(messages, previous_summary, signal)
-        if inspect.isawaitable(raw):
-            raw = await raw
-        result = raw if isinstance(raw, SummaryResult) else SummaryResult(str(raw), Usage.zero())
-        if not result.summary.strip():
-            raise ValueError("summarizer returned an empty branch summary")
-        return BranchSummaryResult(
-            summary=result.summary.strip(),
-            usage=result.usage,
-            files=collect_file_operations(messages),
-            from_id=from_id,
-            to_id=to_id,
-        )
-    except asyncio.CancelledError as exc:
-        raise BranchSummaryError("aborted", str(exc) or "Branch summary aborted", exc) from exc
-    except BranchSummaryError:
-        raise
-    except Exception as exc:
-        raise BranchSummaryError("summarization_failed", str(exc), exc) from exc
+    if not preparation.messages:
+        return BranchSummaryResult("", Usage.zero(), preparation)
+    raw = await _maybe_await(summarizer(serialize_conversation(preparation.messages), None))
+    response = raw if isinstance(raw, SummaryResponse) else SummaryResponse(str(raw))
+    return BranchSummaryResult(response.text.strip(), response.usage, preparation)
+
+
+async def summarize_and_navigate_branch(
+    manager: SessionManager,
+    *,
+    to_entry_id: str,
+    summarizer: Summarizer,
+) -> tuple[BranchSummaryEntry | None, BranchSummaryResult]:
+    if manager.leaf_id is None:
+        raise ValueError("cannot summarize an empty session branch")
+    preparation = collect_entries_for_branch_summary(
+        manager.tree,
+        from_entry_id=manager.leaf_id,
+        to_entry_id=to_entry_id,
+    )
+    result = await generate_branch_summary(preparation, summarizer)
+    manager.navigate(to_entry_id)
+    if not result.summary:
+        return None, result
+    entry = manager.append_branch_summary(
+        result.summary,
+        from_entry_id=preparation.from_entry_id,
+        to_entry_id=preparation.to_entry_id,
+        details={
+            "commonAncestorId": preparation.common_ancestor_id,
+            "usage": {
+                "input": result.usage.input,
+                "output": result.usage.output,
+                "totalTokens": result.usage.total_tokens,
+            },
+        },
+    )
+    return entry, result
+
+
+async def _maybe_await(value: T | Awaitable[T]) -> T:
+    if inspect.isawaitable(value):
+        return await value
+    return value

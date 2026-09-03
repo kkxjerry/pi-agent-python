@@ -4,87 +4,86 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-ResourceKind = Literal[
-    "system",
-    "append_system",
-    "context",
-    "skill",
-    "prompt",
-    "theme",
-    "extension",
-    "package",
-]
+ResourceKind = Literal["user", "project", "context", "explicit", "package"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
+class ResourceSource:
+    kind: ResourceKind
+    root: Path
+    path: Path
+    priority: int
+
+
+@dataclass(slots=True, frozen=True)
 class ResourceWarning:
     code: str
     message: str
     path: Path | None = None
-    replaced_path: Path | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class ResourceOrigin:
-    path: Path
-    priority: int
-    scope: Literal["user", "project", "explicit"]
+@dataclass(slots=True, frozen=True)
+class ContextFile:
+    content: str
+    source: ResourceSource
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
 class Skill:
     name: str
     description: str
-    content: str
-    file_path: Path
-    disable_model_invocation: bool = False
-    origin: ResourceOrigin | None = None
+    body: str
+    metadata: dict[str, Any]
+    resources: tuple[Path, ...]
+    source: ResourceSource
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
 class PromptTemplate:
     name: str
-    content: str
-    description: str | None = None
-    file_path: Path | None = None
-    origin: ResourceOrigin | None = None
+    description: str
+    body: str
+    argument_hint: str | None
+    metadata: dict[str, Any]
+    source: ResourceSource
 
 
-@dataclass(frozen=True, slots=True)
-class ThemeResource:
+@dataclass(slots=True, frozen=True)
+class Theme:
     name: str
     data: dict[str, Any]
-    file_path: Path
-    origin: ResourceOrigin
+    source: ResourceSource
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
 class ExtensionResource:
     name: str
-    file_path: Path
-    origin: ResourceOrigin
+    source: ResourceSource
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
 class PackageResource:
     name: str
-    manifest: dict[str, Any]
-    file_path: Path
-    origin: ResourceOrigin
+    metadata: dict[str, Any]
+    source: ResourceSource
 
 
-@dataclass(slots=True)
-class LoadedResources:
-    system_prompt: str | None = None
-    append_system_prompts: list[str] = field(default_factory=list)
-    context_files: list[tuple[Path, str]] = field(default_factory=list)
-    skills: dict[str, Skill] = field(default_factory=dict)
-    prompts: dict[str, PromptTemplate] = field(default_factory=dict)
-    themes: dict[str, ThemeResource] = field(default_factory=dict)
-    extensions: dict[str, ExtensionResource] = field(default_factory=dict)
-    packages: dict[str, PackageResource] = field(default_factory=dict)
-    warnings: list[ResourceWarning] = field(default_factory=list)
-    roots: list[ResourceOrigin] = field(default_factory=list)
+@dataclass(slots=True, frozen=True)
+class ResourceSnapshot:
+    generation: int
+    system_prompt: str | None
+    system_prompt_source: ResourceSource | None
+    append_system_prompts: tuple[ContextFile, ...]
+    context_files: tuple[ContextFile, ...]
+    skills: tuple[Skill, ...]
+    prompt_templates: tuple[PromptTemplate, ...]
+    themes: tuple[Theme, ...]
+    extensions: tuple[ExtensionResource, ...]
+    packages: tuple[PackageResource, ...]
+    warnings: tuple[ResourceWarning, ...] = field(default_factory=tuple)
 
-    def model_skills(self) -> list[Skill]:
-        return [skill for skill in self.skills.values() if not skill.disable_model_invocation]
+    def skill(self, name: str) -> Skill | None:
+        return next((item for item in self.skills if item.name == name), None)
+
+    def prompt_template(self, name: str) -> PromptTemplate | None:
+        return next((item for item in self.prompt_templates if item.name == name), None)

@@ -1,53 +1,117 @@
-"""Product-level AgentSession, configuration, and headless modes."""
+"""Stable Python SDK for the coding-agent product layer."""
 
-from .agent_session import AgentSession, AgentSessionOptions, create_agent_session
-from .configuration import (
-    compaction_settings_from_settings,
-    load_settings,
-    model_from_settings,
-    resource_loader_from_settings,
-    stream_options_from_settings,
+from __future__ import annotations
+
+from .agent_session import (
+    AgentRunMessages,
+    AgentSession,
+    AgentSessionEvent,
+    AgentSessionState,
+    AgentSettledEvent,
+    CompactionEndEvent,
+    CompactionRunResult,
+    CompactionStartEvent,
+    EntryAppendedEvent,
+    PromptOptions,
+    QueueUpdateEvent,
+    SessionInfoChangedEvent,
+    SessionStats,
+    ThinkingLevelChangedEvent,
 )
-from .events import agent_event_to_dict, assistant_event_to_dict, tool_result_to_dict
-from .modes import RpcProtocolError, RpcServer, run_json_mode, run_print_mode, run_rpc_mode
+from .configuration import (
+    build_compaction_settings,
+    build_resource_loader_config,
+    session_directory,
+)
+from .modes import (
+    PrintModeOptions,
+    RpcServer,
+    parse_json_line,
+    run_json_mode,
+    run_print_mode,
+    run_rpc_mode,
+    run_rpc_stdio,
+    serialize_json_line,
+    to_json_event,
+)
+from .sdk import (
+    CreateAgentSessionOptions,
+    CreateAgentSessionResult,
+    create_agent_session_only,
+    create_model_summarizer,
+)
+from .sdk import create_agent_session as _create_agent_session
 from .settings import (
+    DEFAULT_ENV_KEYS,
     DEFAULT_SPECS,
-    SettingSource,
+    SettingOrigin,
+    SettingsError,
     SettingSpec,
-    Settings,
     SettingsResolver,
+    SettingsSnapshot,
     SettingsStore,
-    flatten,
+    SettingsWarning,
     load_settings_file,
     save_settings_file,
-    unflatten,
 )
 
+# The Phase 17 draft exposed this shorter name. Keep it as a source-compatible
+# alias while the canonical Phase 21 SDK uses CreateAgentSessionOptions.
+AgentSessionOptions = CreateAgentSessionOptions
+Settings = SettingsSnapshot
+SettingSource = SettingOrigin
+
+
+async def create_agent_session(
+    options: CreateAgentSessionOptions | None = None,
+) -> CreateAgentSessionResult:
+    return await _create_agent_session(options)
+
+
 __all__ = [
+    "DEFAULT_ENV_KEYS",
     "DEFAULT_SPECS",
+    "AgentRunMessages",
     "AgentSession",
+    "AgentSessionEvent",
     "AgentSessionOptions",
-    "RpcProtocolError",
+    "AgentSessionState",
+    "AgentSettledEvent",
+    "CompactionEndEvent",
+    "CompactionRunResult",
+    "CompactionStartEvent",
+    "CreateAgentSessionOptions",
+    "CreateAgentSessionResult",
+    "EntryAppendedEvent",
+    "PrintModeOptions",
+    "PromptOptions",
+    "QueueUpdateEvent",
     "RpcServer",
+    "SessionInfoChangedEvent",
+    "SessionStats",
+    "SettingOrigin",
     "SettingSource",
     "SettingSpec",
     "Settings",
+    "SettingsError",
     "SettingsResolver",
+    "SettingsSnapshot",
     "SettingsStore",
-    "agent_event_to_dict",
-    "assistant_event_to_dict",
-    "compaction_settings_from_settings",
+    "SettingsWarning",
+    "ThinkingLevelChangedEvent",
+    "build_compaction_settings",
+    "build_resource_loader_config",
     "create_agent_session",
-    "flatten",
-    "load_settings",
+    "create_agent_session_only",
+    "create_model_summarizer",
     "load_settings_file",
-    "model_from_settings",
-    "resource_loader_from_settings",
+    "parse_json_line",
     "run_json_mode",
     "run_print_mode",
     "run_rpc_mode",
+    "run_rpc_stdio",
     "save_settings_file",
-    "stream_options_from_settings",
-    "tool_result_to_dict",
-    "unflatten",
+    "serialize_json_line",
+    "session_directory",
+    "to_json_event",
 ]

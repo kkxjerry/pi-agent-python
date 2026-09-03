@@ -124,6 +124,6 @@ def test_cli_json_mode_keeps_stdout_jsonl(
     records = [json.loads(line) for line in captured.out.splitlines()]
     assert status == 0
     assert captured.err == ""
-    assert records[0]["type"] == "agent_start"
-    assert records[-1]["type"] == "agent_end"
+    assert records[0]["type"] == "session"
+    assert records[-1]["type"] == "agent_settled"
     assert any(record["type"] == "message_update" for record in records)

@@ -882,3 +882,8 @@ async def _maybe_await(value: T | Awaitable[T]) -> T:
 
 def _is_llm_message(message: object) -> TypeGuard[Message]:
     return isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage))
+
+
+# Public harness hook. The implementation stays private so the low-level loop can
+# evolve internally while extensions and tests depend on one stable entry point.
+execute_tool_batch = _execute_tool_batch

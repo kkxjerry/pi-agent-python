@@ -45,7 +45,7 @@ where = ["src"]
 pi_agent = ["py.typed", "data/*.json"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-config --strict-markers"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "strict"

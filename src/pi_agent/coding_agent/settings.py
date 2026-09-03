@@ -3,36 +3,46 @@ from __future__ import annotations
 import json
 import os
 import tomllib
+from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal
 
-SettingValidator = Callable[[Any], Any]
+SettingsLayer = Literal["default", "global", "project", "environment", "cli", "runtime"]
 
 
-@dataclass(frozen=True, slots=True)
-class SettingSource:
-    layer: str
+class SettingsError(ValueError):
+    pass
+
+
+@dataclass(slots=True, frozen=True)
+class SettingOrigin:
+    layer: SettingsLayer
     location: str
     key: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
+class SettingsWarning:
+    code: str
+    message: str
+    location: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class SettingSpec:
     default: Any
-    validator: SettingValidator
+    coerce: Callable[[Any], Any]
+    validate: Callable[[Any], bool] = lambda _value: True
+    description: str = ""
 
 
-class Settings:
-    def __init__(
-        self,
-        values: dict[str, Any],
-        sources: dict[str, SettingSource],
-        specs: dict[str, SettingSpec],
-    ) -> None:
-        self._values = dict(values)
-        self._sources = dict(sources)
-        self._specs = dict(specs)
+@dataclass(slots=True)
+class SettingsSnapshot:
+    _values: dict[str, Any]
+    origins: dict[str, SettingOrigin]
+    warnings: tuple[SettingsWarning, ...] = ()
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._values.get(key, default)
@@ -42,337 +52,443 @@ class Settings:
             raise KeyError(key)
         return self._values[key]
 
-    def source(self, key: str) -> SettingSource | None:
-        return self._sources.get(key)
+    def source(self, key: str) -> SettingOrigin:
+        try:
+            return self.origins[key]
+        except KeyError as exc:
+            raise KeyError(f"unknown setting: {key}") from exc
 
-    def as_flat_dict(self) -> dict[str, Any]:
+    def flat(self) -> dict[str, Any]:
         return dict(self._values)
 
-    def as_dict(self) -> dict[str, Any]:
-        return unflatten(self._values)
-
-    def with_runtime(self, values: dict[str, Any]) -> Settings:
-        merged = dict(self._values)
-        sources = dict(self._sources)
-        for key, value in flatten(values).items():
-            spec = self._specs.get(key)
-            if spec is None:
-                raise ValueError(f"Unknown setting: {key}")
-            merged[key] = spec.validator(value)
-            sources[key] = SettingSource("runtime", "runtime", key)
-        return Settings(merged, sources, self._specs)
-
-
-DEFAULT_SPECS: dict[str, SettingSpec] = {
-    "model.provider": SettingSpec("openai", _string),
-    "model.id": SettingSpec("gpt-5.6", _string),
-    "model.api": SettingSpec("openai-completions", _string),
-    "model.base_url": SettingSpec("https://api.openai.com/v1", _string),
-    "model.context_window": SettingSpec(128_000, _positive_int),
-    "model.max_tokens": SettingSpec(16_384, _positive_int),
-    "thinking.level": SettingSpec("off", _thinking_level),
-    "provider.transport": SettingSpec("sse", _transport),
-    "provider.timeout": SettingSpec(600.0, _positive_number),
-    "provider.stream_idle_timeout": SettingSpec(600.0, _positive_number),
-    "provider.max_retries": SettingSpec(2, _non_negative_int),
-    "provider.max_retry_delay": SettingSpec(60.0, _non_negative_number),
-    "compaction.enabled": SettingSpec(True, _boolean),
-    "compaction.reserve_tokens": SettingSpec(16_384, _non_negative_int),
-    "compaction.keep_recent_tokens": SettingSpec(20_000, _non_negative_int),
-    "compaction.retry_count": SettingSpec(1, _non_negative_int),
-    "tools.enabled": SettingSpec(["read", "write", "edit", "bash"], _string_list),
-    "tools.timeout": SettingSpec(120.0, _positive_number),
-    "resources.paths": SettingSpec([], _string_list),
-    "resources.include": SettingSpec(["**"], _string_list),
-    "resources.exclude": SettingSpec([], _string_list),
-    "resources.follow_symlinks": SettingSpec(False, _boolean),
-    "packages.enabled": SettingSpec([], _string_list),
-    "session.enabled": SettingSpec(True, _boolean),
-    "session.directory": SettingSpec("~/.pi/sessions", _string),
-    "session.fsync": SettingSpec(False, _boolean),
-    "theme": SettingSpec("default", _string),
-    "keybindings": SettingSpec({}, _dict),
-    "telemetry.enabled": SettingSpec(False, _boolean),
-}
-
-_ENV_KEYS = {
-    "PI_MODEL_PROVIDER": "model.provider",
-    "PI_MODEL": "model.id",
-    "PI_MODEL_API": "model.api",
-    "PI_BASE_URL": "model.base_url",
-    "PI_CONTEXT_WINDOW": "model.context_window",
-    "PI_MAX_TOKENS": "model.max_tokens",
-    "PI_THINKING_LEVEL": "thinking.level",
-    "PI_TRANSPORT": "provider.transport",
-    "PI_TIMEOUT": "provider.timeout",
-    "PI_STREAM_IDLE_TIMEOUT": "provider.stream_idle_timeout",
-    "PI_MAX_RETRIES": "provider.max_retries",
-    "PI_MAX_RETRY_DELAY": "provider.max_retry_delay",
-    "PI_SESSION_DIR": "session.directory",
-    "PI_THEME": "theme",
-    "PI_TELEMETRY": "telemetry.enabled",
-}
-
-
-class SettingsResolver:
-    def __init__(self, specs: dict[str, SettingSpec] | None = None) -> None:
-        self.specs = dict(specs or DEFAULT_SPECS)
-
-    def resolve(
-        self,
-        *,
-        global_path: str | Path | None = None,
-        project_path: str | Path | None = None,
-        environment: dict[str, str] | None = None,
-        cli: dict[str, Any] | None = None,
-        runtime: dict[str, Any] | None = None,
-    ) -> Settings:
-        values = {key: spec.validator(spec.default) for key, spec in self.specs.items()}
-        sources = {key: SettingSource("default", "built-in", key) for key in self.specs}
-        layers: list[tuple[str, str, dict[str, Any]]] = []
-        for layer, path_value in (("global", global_path), ("project", project_path)):
-            if path_value is None:
-                continue
-            path = Path(path_value).expanduser().resolve()
-            if path.exists():
-                layers.append((layer, str(path), load_settings_file(path)))
-        layers.append(("environment", "environment", self._environment_values(environment)))
-        if cli:
-            layers.append(("cli", "command line", cli))
-        if runtime:
-            layers.append(("runtime", "runtime", runtime))
-        for layer, location, payload in layers:
-            self._apply(values, sources, payload, layer=layer, location=location)
-        self._validate_cross_fields(values)
-        return Settings(values, sources, self.specs)
-
-    def _apply(
-        self,
-        values: dict[str, Any],
-        sources: dict[str, SettingSource],
-        payload: dict[str, Any],
-        *,
-        layer: str,
-        location: str,
-    ) -> None:
-        for key, raw in flatten(payload).items():
-            spec = self.specs.get(key)
-            if spec is None:
-                raise ValueError(f"Unknown setting {key!r} in {location}")
-            try:
-                value = spec.validator(raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"Invalid setting {key!r} in {location}: {exc}") from exc
-            values[key] = value
-            sources[key] = SettingSource(layer, location, key)
-
-    def _environment_values(self, environment: dict[str, str] | None) -> dict[str, Any]:
-        env = environment if environment is not None else dict(os.environ)
+    def nested(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
-        for variable, key in _ENV_KEYS.items():
-            if variable in env:
-                result[key] = _parse_environment_value(env[variable])
-        for variable, value in env.items():
-            if not variable.startswith("PI_SETTING__"):
-                continue
-            key = variable[len("PI_SETTING__") :].lower().replace("__", ".")
-            result[key] = _parse_environment_value(value)
+        for key, value in self._values.items():
+            _assign_nested(result, key.split("."), value)
         return result
 
-    @staticmethod
-    def _validate_cross_fields(values: dict[str, Any]) -> None:
-        reserve = int(values["compaction.reserve_tokens"])
-        keep = int(values["compaction.keep_recent_tokens"])
-        context = int(values["model.context_window"])
-        if reserve >= context:
-            raise ValueError("compaction.reserve_tokens must be smaller than model.context_window")
-        if keep >= context:
-            raise ValueError(
-                "compaction.keep_recent_tokens must be smaller than model.context_window"
-            )
+
+DEFAULT_ENV_KEYS: dict[str, str] = {
+    "PI_MODEL_PROVIDER": "model.provider",
+    "PI_MODEL": "model.id",
+    "PI_THINKING_LEVEL": "thinking.level",
+    "PI_PROVIDER_TRANSPORT": "provider.transport",
+    "PI_PROVIDER_TIMEOUT": "provider.timeout_seconds",
+    "PI_PROVIDER_STREAM_IDLE_TIMEOUT": "provider.stream_idle_timeout_seconds",
+    "PI_PROVIDER_MAX_RETRIES": "provider.max_retries",
+    "PI_COMPACTION_ENABLED": "compaction.enabled",
+    "PI_COMPACTION_RESERVE_TOKENS": "compaction.reserve_tokens",
+    "PI_COMPACTION_KEEP_RECENT_TOKENS": "compaction.keep_recent_tokens",
+    "PI_TOOLS": "tools.enabled",
+    "PI_TOOL_TIMEOUT": "tools.timeout_seconds",
+    "PI_RESOURCE_USER_ROOT": "resources.user_root",
+    "PI_RESOURCE_PROJECT_DIR": "resources.project_dir_name",
+    "PI_SESSION_DIR": "session.directory",
+    "PI_SESSION_ENABLED": "session.enabled",
+    "PI_THEME": "ui.theme",
+    "PI_TELEMETRY_ENABLED": "telemetry.enabled",
+}
 
 
-class SettingsStore:
-    def __init__(
-        self,
-        *,
-        global_path: str | Path,
-        project_path: str | Path,
-    ) -> None:
-        self.global_path = Path(global_path).expanduser().resolve()
-        self.project_path = Path(project_path).expanduser().resolve()
-
-    def save_global(self, values: Settings | dict[str, Any]) -> Path:
-        return save_settings_file(self.global_path, _settings_payload(values))
-
-    def save_project(self, values: Settings | dict[str, Any]) -> Path:
-        return save_settings_file(self.project_path, _settings_payload(values))
-
-
-def load_settings_file(path: str | Path) -> dict[str, Any]:
-    source = Path(path).expanduser().resolve()
-    raw = source.read_bytes()
-    if source.suffix.lower() == ".toml":
-        value = tomllib.loads(raw.decode("utf-8"))
-    else:
-        value = json.loads(raw.decode("utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"Settings file must contain an object: {source}")
+def _optional_string(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise SettingsError("must be a string or null")
     return value
 
 
-def save_settings_file(path: str | Path, values: dict[str, Any]) -> Path:
-    target = Path(path).expanduser().resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.suffix.lower() == ".toml":
-        content = _render_toml(values)
-    else:
-        content = json.dumps(values, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    temporary.write_text(content, encoding="utf-8")
-    os.replace(temporary, target)
-    return target
-
-
-def flatten(values: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in values.items():
-        full = f"{prefix}.{key}" if prefix else str(key)
-        if isinstance(value, dict) and full not in DEFAULT_SPECS:
-            result.update(flatten(value, full))
-        else:
-            result[full] = value
-    return result
-
-
-def unflatten(values: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in values.items():
-        cursor = result
-        parts = key.split(".")
-        for part in parts[:-1]:
-            child = cursor.setdefault(part, {})
-            if not isinstance(child, dict):
-                raise ValueError(f"Setting path collision at {key!r}")
-            cursor = child
-        cursor[parts[-1]] = value
-    return result
-
-
-def _settings_payload(values: Settings | dict[str, Any]) -> dict[str, Any]:
-    if isinstance(values, Settings):
-        return values.as_dict()
-    return values
-
-
-def _render_toml(values: dict[str, Any]) -> str:
-    lines: list[str] = []
-    flat = flatten(values)
-    grouped: dict[str, dict[str, Any]] = {}
-    root: dict[str, Any] = {}
-    for key, value in flat.items():
-        if "." in key:
-            section, field = key.rsplit(".", 1)
-            grouped.setdefault(section, {})[field] = value
-        else:
-            root[key] = value
-    for key, value in sorted(root.items()):
-        lines.append(f"{key} = {_toml_value(value)}")
-    for section, fields in sorted(grouped.items()):
-        if lines:
-            lines.append("")
-        lines.append(f"[{section}]")
-        for key, value in sorted(fields.items()):
-            lines.append(f"{key} = {_toml_value(value)}")
-    return "\n".join(lines) + "\n"
-
-
-def _toml_value(value: Any) -> str:
-    if value is None:
-        raise ValueError("TOML settings cannot store null values")
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return repr(value)
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=False)
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    if isinstance(value, dict):
-        pairs = ", ".join(f"{key} = {_toml_value(item)}" for key, item in sorted(value.items()))
-        return "{ " + pairs + " }"
-    raise TypeError(f"Unsupported TOML value: {type(value).__name__}")
-
-
-def _parse_environment_value(value: str) -> Any:
-    stripped = value.strip()
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        return stripped
-
-
 def _string(value: Any) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("must be a non-empty string")
+    if not isinstance(value, str) or not value:
+        raise SettingsError("must be a non-empty string")
     return value
 
 
 def _boolean(value: Any) -> bool:
     if isinstance(value, bool):
         return value
-    if isinstance(value, str) and value.lower() in {"true", "1", "yes", "on"}:
-        return True
-    if isinstance(value, str) and value.lower() in {"false", "0", "no", "off"}:
-        return False
-    raise ValueError("must be a boolean")
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    raise SettingsError("must be a boolean")
 
 
-def _positive_int(value: Any) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError("must be a positive integer")
-    return value
+def _integer(value: Any) -> int:
+    if isinstance(value, bool):
+        raise SettingsError("must be an integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise SettingsError("must be an integer") from exc
+    return parsed
 
 
-def _non_negative_int(value: Any) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError("must be a non-negative integer")
-    return value
+def _float(value: Any) -> float:
+    if isinstance(value, bool):
+        raise SettingsError("must be a number")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise SettingsError("must be a number") from exc
+    return parsed
 
 
-def _positive_number(value: Any) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        raise ValueError("must be a positive number")
-    return float(value)
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return _float(value)
 
 
-def _non_negative_number(value: Any) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-        raise ValueError("must be a non-negative number")
-    return float(value)
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.split(",") if item.strip())
+    if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+        return tuple(value)
+    raise SettingsError("must be a string list")
 
 
-def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise ValueError("must be an array of strings")
-    return list(value)
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError("must be an object")
+def _string_map(value: Any) -> dict[str, str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise SettingsError("must be a JSON object of strings") from exc
+    if not isinstance(value, dict) or not all(
+        isinstance(key, str) and isinstance(item, str) for key, item in value.items()
+    ):
+        raise SettingsError("must be an object of strings")
     return dict(value)
 
 
-def _thinking_level(value: Any) -> str:
-    value = _string(value)
-    if value not in {"off", "minimal", "low", "medium", "high", "xhigh", "max"}:
-        raise ValueError("must be a supported thinking level")
+def _one_of(*allowed: Any) -> Callable[[Any], bool]:
+    return lambda value: value in allowed
+
+
+DEFAULT_SPECS: dict[str, SettingSpec] = {
+    "model.provider": SettingSpec(None, _optional_string),
+    "model.id": SettingSpec(None, _optional_string),
+    "thinking.level": SettingSpec(
+        "off", _string, _one_of("off", "minimal", "low", "medium", "high", "xhigh", "max")
+    ),
+    "provider.transport": SettingSpec(
+        "auto", _string, _one_of("auto", "sse", "websocket", "websocket-cached")
+    ),
+    "provider.timeout_seconds": SettingSpec(600.0, _float, lambda value: value > 0),
+    "provider.stream_idle_timeout_seconds": SettingSpec(
+        None, _optional_float, lambda value: value is None or value > 0
+    ),
+    "provider.max_retries": SettingSpec(2, _integer, lambda value: value >= 0),
+    "provider.max_retry_delay_seconds": SettingSpec(60.0, _float, lambda value: value >= 0),
+    "compaction.enabled": SettingSpec(True, _boolean),
+    "compaction.reserve_tokens": SettingSpec(16_384, _integer, lambda value: value >= 0),
+    "compaction.keep_recent_tokens": SettingSpec(20_000, _integer, lambda value: value > 0),
+    "tools.enabled": SettingSpec(("read", "write", "edit", "bash"), _string_tuple),
+    "tools.timeout_seconds": SettingSpec(120.0, _float, lambda value: value > 0),
+    "resources.user_root": SettingSpec("~/.pi/agent", _string),
+    "resources.project_dir_name": SettingSpec(".pi", _string),
+    "resources.include": SettingSpec((), _string_tuple),
+    "resources.exclude": SettingSpec(("**/.git/**", "**/__pycache__/**"), _string_tuple),
+    "resources.follow_symlinks": SettingSpec(False, _boolean),
+    "packages.enabled": SettingSpec((), _string_tuple),
+    "session.enabled": SettingSpec(True, _boolean),
+    "session.directory": SettingSpec("~/.pi/agent/sessions", _string),
+    "session.fsync": SettingSpec(False, _boolean),
+    "ui.theme": SettingSpec(None, _optional_string),
+    "ui.keybindings": SettingSpec({}, _string_map),
+    "telemetry.enabled": SettingSpec(False, _boolean),
+    "telemetry.exporter": SettingSpec("none", _string),
+}
+
+
+class SettingsResolver:
+    def __init__(
+        self,
+        specs: Mapping[str, SettingSpec] | None = None,
+        *,
+        env_keys: Mapping[str, str] | None = None,
+    ) -> None:
+        self.specs = dict(specs or DEFAULT_SPECS)
+        self.env_keys = dict(env_keys or DEFAULT_ENV_KEYS)
+
+    def resolve(
+        self,
+        *,
+        global_path: str | Path | None = None,
+        project_path: str | Path | None = None,
+        environ: Mapping[str, str] | None = None,
+        cli: Mapping[str, Any] | None = None,
+        runtime: Mapping[str, Any] | None = None,
+        strict_unknown: bool = True,
+    ) -> SettingsSnapshot:
+        values: dict[str, Any] = {}
+        origins: dict[str, SettingOrigin] = {}
+        warnings: list[SettingsWarning] = []
+        for key, spec in self.specs.items():
+            values[key] = _clone_value(spec.default)
+            origins[key] = SettingOrigin("default", "built-in", key)
+
+        if global_path is not None:
+            self._apply_file(
+                values,
+                origins,
+                warnings,
+                Path(global_path),
+                "global",
+                strict_unknown,
+            )
+        if project_path is not None:
+            self._apply_file(
+                values,
+                origins,
+                warnings,
+                Path(project_path),
+                "project",
+                strict_unknown,
+            )
+        self._apply_environment(
+            values,
+            origins,
+            warnings,
+            environ if environ is not None else os.environ,
+            strict_unknown,
+        )
+        if cli:
+            self._apply_mapping(
+                values,
+                origins,
+                warnings,
+                _flatten(cli),
+                "cli",
+                "command line",
+                strict_unknown,
+            )
+        if runtime:
+            self._apply_mapping(
+                values,
+                origins,
+                warnings,
+                _flatten(runtime),
+                "runtime",
+                "runtime override",
+                strict_unknown,
+            )
+        self._validate_cross_fields(values)
+        return SettingsSnapshot(values, origins, tuple(warnings))
+
+    def _apply_file(
+        self,
+        values: dict[str, Any],
+        origins: dict[str, SettingOrigin],
+        warnings: list[SettingsWarning],
+        path: Path,
+        layer: Literal["global", "project"],
+        strict_unknown: bool,
+    ) -> None:
+        if not path.exists():
+            return
+        mapping = load_settings_file(path)
+        self._apply_mapping(
+            values,
+            origins,
+            warnings,
+            _flatten(mapping),
+            layer,
+            str(path),
+            strict_unknown,
+        )
+
+    def _apply_environment(
+        self,
+        values: dict[str, Any],
+        origins: dict[str, SettingOrigin],
+        warnings: list[SettingsWarning],
+        environ: Mapping[str, str],
+        strict_unknown: bool,
+    ) -> None:
+        mapped = {key: environ[name] for name, key in self.env_keys.items() if name in environ}
+        self._apply_mapping(
+            values,
+            origins,
+            warnings,
+            mapped,
+            "environment",
+            "environment",
+            strict_unknown,
+        )
+
+    def _apply_mapping(
+        self,
+        values: dict[str, Any],
+        origins: dict[str, SettingOrigin],
+        warnings: list[SettingsWarning],
+        mapping: Mapping[str, Any],
+        layer: SettingsLayer,
+        location: str,
+        strict_unknown: bool,
+    ) -> None:
+        errors: list[str] = []
+        for key, raw in mapping.items():
+            spec = self.specs.get(key)
+            if spec is None:
+                message = f"unknown setting {key!r} in {location}"
+                if strict_unknown:
+                    errors.append(message)
+                else:
+                    warnings.append(SettingsWarning("unknown_setting", message, location))
+                continue
+            try:
+                value = spec.coerce(raw)
+            except SettingsError as exc:
+                errors.append(f"{key} in {location} {exc}")
+                continue
+            if not spec.validate(value):
+                errors.append(f"{key} in {location} has an invalid value: {raw!r}")
+                continue
+            values[key] = value
+            origins[key] = SettingOrigin(layer, location, key)
+        if errors:
+            raise SettingsError("; ".join(errors))
+
+    @staticmethod
+    def _validate_cross_fields(values: Mapping[str, Any]) -> None:
+        if values["compaction.keep_recent_tokens"] <= values["compaction.reserve_tokens"]:
+            # This is allowed by some models, but is almost always a configuration
+            # mistake because no stable recent tail can fit inside the reserve.
+            raise SettingsError(
+                "compaction.keep_recent_tokens must be greater than compaction.reserve_tokens"
+            )
+
+
+class SettingsStore:
+    """Explicit persistence targets; runtime overrides are never saved implicitly."""
+
+    def __init__(self, *, global_path: str | Path, project_path: str | Path) -> None:
+        self.global_path = Path(global_path)
+        self.project_path = Path(project_path)
+
+    def save_global(self, values: Mapping[str, Any]) -> None:
+        save_settings_file(self.global_path, values)
+
+    def save_project(self, values: Mapping[str, Any]) -> None:
+        save_settings_file(self.project_path, values)
+
+
+def load_settings_file(path: str | Path) -> dict[str, Any]:
+    actual = Path(path)
+    try:
+        data = actual.read_bytes()
+    except OSError as exc:
+        raise SettingsError(f"could not read settings file {actual}: {exc}") from exc
+    try:
+        if actual.suffix.lower() == ".toml":
+            value = tomllib.loads(data.decode("utf-8"))
+        else:
+            value = json.loads(data.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise SettingsError(f"invalid settings file {actual}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise SettingsError(f"settings file {actual} must contain an object")
     return value
 
 
-def _transport(value: Any) -> str:
-    value = _string(value)
-    if value not in {"sse", "websocket", "websocket-cached", "auto"}:
-        raise ValueError("must be sse, websocket, websocket-cached, or auto")
+def save_settings_file(path: str | Path, values: Mapping[str, Any]) -> None:
+    actual = Path(path)
+    actual.parent.mkdir(parents=True, exist_ok=True)
+    nested = _nested_from_input(values)
+    if actual.suffix.lower() == ".toml":
+        content = _toml_document(nested)
+    else:
+        content = json.dumps(nested, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    temporary = actual.with_name(f".{actual.name}.tmp-{os.getpid()}")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, actual)
+    finally:
+        with suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def _flatten(value: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, item in value.items():
+        full = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(item, Mapping) and full not in DEFAULT_SPECS:
+            result.update(_flatten(item, full))
+        else:
+            result[full] = item
+    return result
+
+
+def _assign_nested(target: dict[str, Any], parts: list[str], value: Any) -> None:
+    current = target
+    for part in parts[:-1]:
+        child = current.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            current[part] = child
+        current = child
+    current[parts[-1]] = _serializable_value(value)
+
+
+def _nested_from_input(values: Mapping[str, Any]) -> dict[str, Any]:
+    if any("." in key for key in values):
+        result: dict[str, Any] = {}
+        for key, value in values.items():
+            _assign_nested(result, key.split("."), value)
+        return result
+    return {str(key): _serializable_value(value) for key, value in values.items()}
+
+
+def _serializable_value(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return [_serializable_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _serializable_value(item) for key, item in value.items()}
     return value
+
+
+def _clone_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, tuple):
+        return tuple(value)
+    return value
+
+
+def _toml_document(value: Mapping[str, Any]) -> str:
+    lines: list[str] = []
+    scalars = {key: item for key, item in value.items() if not isinstance(item, Mapping)}
+    nested = {key: item for key, item in value.items() if isinstance(item, Mapping)}
+    for key, item in scalars.items():
+        lines.append(f"{key} = {_toml_value(item)}")
+    for section, mapping in nested.items():
+        if lines:
+            lines.append("")
+        lines.append(f"[{section}]")
+        for key, item in mapping.items():
+            if isinstance(item, Mapping):
+                raise SettingsError("nested TOML tables deeper than one level are not supported")
+            lines.append(f"{key} = {_toml_value(item)}")
+    return "\n".join(lines) + "\n"
+
+
+def _toml_value(value: Any) -> str:
+    if value is None:
+        raise SettingsError("TOML cannot persist null values")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    if isinstance(value, Mapping):
+        parts = [f"{key} = {_toml_value(item)}" for key, item in value.items()]
+        return "{ " + ", ".join(parts) + " }"
+    raise SettingsError(f"cannot serialize TOML value {value!r}")

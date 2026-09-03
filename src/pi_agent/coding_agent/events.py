@@ -22,8 +22,8 @@ from pi_agent.ai import (
     ThinkingContent,
     ToolCall,
     message_to_dict,
-    usage_to_dict,
 )
+from pi_agent.ai.types import usage_to_dict
 
 
 def agent_event_to_dict(event: AgentEvent) -> dict[str, Any]:

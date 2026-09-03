@@ -1,77 +1,83 @@
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
 
 from pi_agent.ai import Message, UserMessage
 
-from .types import SessionEntry
+from .tree import SessionPath
+from .types import (
+    BranchSummaryEntry,
+    CompactionEntry,
+    MessageEntry,
+    ModelChangeEntry,
+    ThinkingLevelChangeEntry,
+)
+
+DEFAULT_COMPACTION_PREFIX = (
+    "The conversation before this point was compacted. Continue from this summary:\n\n"
+)
+DEFAULT_BRANCH_SUMMARY_PREFIX = (
+    "The user explored a different conversation branch before returning here.\n"
+    "Summary of that exploration:\n\n"
+)
 
 
-def active_branch(entries: list[SessionEntry], current_id: str | None) -> list[SessionEntry]:
-    if current_id is None:
-        return []
-    by_id = {entry.id: entry for entry in entries if entry.type != "cursor"}
-    branch: list[SessionEntry] = []
-    cursor = current_id
-    seen: set[str] = set()
-    while cursor is not None:
-        if cursor in seen:
-            raise ValueError(f"session branch contains a cycle at {cursor!r}")
-        seen.add(cursor)
-        entry = by_id.get(cursor)
-        if entry is None:
-            raise ValueError(f"session branch references unknown entry {cursor!r}")
-        branch.append(entry)
-        cursor = entry.parent_id
-    branch.reverse()
-    return branch
+@dataclass(slots=True, frozen=True)
+class ReconstructedContext:
+    messages: tuple[Message, ...]
+    model_provider: str | None
+    model_id: str | None
+    thinking_level: str | None
+    compaction: CompactionEntry | None
 
 
-def build_model_context(entries: list[SessionEntry], current_id: str | None) -> list[Message]:
-    """Build the active model transcript from an append-only branch.
+def reconstruct_context(
+    path: SessionPath,
+    *,
+    compaction_prefix: str = DEFAULT_COMPACTION_PREFIX,
+    branch_summary_prefix: str = DEFAULT_BRANCH_SUMMARY_PREFIX,
+) -> ReconstructedContext:
+    entries = list(path.entries)
+    model_provider: str | None = None
+    model_id: str | None = None
+    thinking_level: str | None = None
+    latest_compaction: CompactionEntry | None = None
 
-    The latest compaction replaces the summarized prefix with one synthetic user
-    message. Original records remain in the JSONL file and can still be inspected
-    or used by another branch.
-    """
+    for entry in entries:
+        if isinstance(entry, ModelChangeEntry):
+            model_provider = entry.provider
+            model_id = entry.model_id
+        elif isinstance(entry, ThinkingLevelChangeEntry):
+            thinking_level = entry.thinking_level
+        elif isinstance(entry, CompactionEntry):
+            latest_compaction = entry
 
-    branch = active_branch(entries, current_id)
-    latest_compaction = -1
-    for index, entry in enumerate(branch):
-        if entry.type == "compaction":
-            latest_compaction = index
-
-    messages: list[Message] = []
     start = 0
-    if latest_compaction >= 0:
-        compaction = branch[latest_compaction]
-        summary = compaction.data.get("summary")
-        if isinstance(summary, str) and summary:
-            messages.append(
-                UserMessage(f"<conversation-summary>\n{summary}\n</conversation-summary>")
-            )
-        first_kept = compaction.data.get("firstKeptId")
-        if isinstance(first_kept, str):
-            for index, entry in enumerate(branch):
-                if entry.id == first_kept:
+    messages: list[Message] = []
+    if latest_compaction is not None:
+        messages.append(UserMessage(compaction_prefix + latest_compaction.summary))
+        if latest_compaction.first_kept_entry_id is not None:
+            for index, entry in enumerate(entries):
+                if entry.id == latest_compaction.first_kept_entry_id:
                     start = index
                     break
             else:
-                start = latest_compaction + 1
+                raise ValueError(
+                    "compaction first_kept_entry_id is not on the active session branch: "
+                    f"{latest_compaction.first_kept_entry_id}"
+                )
         else:
-            start = latest_compaction + 1
+            start = entries.index(latest_compaction) + 1
 
-    for entry in branch[start:]:
-        if entry.type == "message":
-            message = entry.message
-            if message is not None:
-                messages.append(message)
-        elif entry.type == "branch_summary":
-            summary = entry.data.get("summary")
-            if isinstance(summary, str) and summary:
-                messages.append(UserMessage(f"<branch-summary>\n{summary}\n</branch-summary>"))
-    return messages
-
-
-def entry_payload(entry: SessionEntry) -> dict[str, Any]:
-    return {"id": entry.id, "parentId": entry.parent_id, "type": entry.type, **entry.data}
+    for entry in entries[start:]:
+        if isinstance(entry, MessageEntry):
+            messages.append(entry.message)
+        elif isinstance(entry, BranchSummaryEntry):
+            messages.append(UserMessage(branch_summary_prefix + entry.summary))
+    return ReconstructedContext(
+        tuple(messages),
+        model_provider,
+        model_id,
+        thinking_level,
+        latest_compaction,
+    )

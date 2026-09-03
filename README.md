@@ -82,9 +82,8 @@ from pi_agent.coding_agent import AgentSessionOptions, create_agent_session
 
 
 async def main() -> None:
-    session = await create_agent_session(
-        AgentSessionOptions(cwd=".", no_session=True)
-    )
+    created = await create_agent_session(AgentSessionOptions(cwd=".", no_session=True))
+    session = created.session
     try:
         result = await session.prompt("Read README.md and summarize the project")
         print(result.final_assistant)
@@ -101,12 +100,11 @@ A deterministic provider can be injected for tests:
 from pi_agent.ai import AssistantMessage, FauxProvider, TextContent
 from pi_agent.coding_agent import AgentSessionOptions, create_agent_session
 
-provider = FauxProvider([
-    AssistantMessage(content=[TextContent("done")], stop_reason="stop")
-])
-session = await create_agent_session(
+provider = FauxProvider([AssistantMessage(content=[TextContent("done")], stop_reason="stop")])
+created = await create_agent_session(
     AgentSessionOptions(cwd=".", no_session=True, stream_fn=provider.stream)
 )
+session = created.session
 ```
 
 ## Session model

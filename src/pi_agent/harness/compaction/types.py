@@ -4,83 +4,95 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeAlias
 
-from pi_agent.ai import CancellationToken, Message, Usage
+from pi_agent.ai import Message, Usage
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, frozen=True)
+class CompactionSettings:
+    context_window: int
+    reserve_tokens: int = 16_384
+    keep_recent_tokens: int = 20_000
+    summary_prefix: str = (
+        "The conversation before this point was compacted. Continue from this summary:\n\n"
+    )
+    max_attempts: int = 2
+
+    def __post_init__(self) -> None:
+        if self.context_window <= 0:
+            raise ValueError("context_window must be positive")
+        if self.reserve_tokens < 0:
+            raise ValueError("reserve_tokens must be non-negative")
+        if self.keep_recent_tokens <= 0:
+            raise ValueError("keep_recent_tokens must be positive")
+        if self.reserve_tokens >= self.context_window:
+            raise ValueError("reserve_tokens must be smaller than context_window")
+        if self.max_attempts <= 0:
+            raise ValueError("max_attempts must be positive")
+
+    @property
+    def threshold(self) -> int:
+        return self.context_window - self.reserve_tokens
+
+
+@dataclass(slots=True, frozen=True)
 class FileOperations:
     read: tuple[str, ...] = ()
     modified: tuple[str, ...] = ()
 
-    def merge(self, other: FileOperations) -> FileOperations:
-        return FileOperations(
-            read=tuple(dict.fromkeys((*self.read, *other.read))),
-            modified=tuple(dict.fromkeys((*self.modified, *other.modified))),
-        )
 
-    def to_dict(self) -> dict[str, list[str]]:
-        return {"read": list(self.read), "modified": list(self.modified)}
-
-
-@dataclass(slots=True)
-class CompactionSettings:
-    enabled: bool = True
-    reserve_tokens: int = 16_384
-    keep_recent_tokens: int = 20_000
-    retry_count: int = 1
-    summary_prefix: str = "Summary of the earlier conversation:"
+@dataclass(slots=True, frozen=True)
+class CompactionPreparation:
+    messages_to_summarize: tuple[Message, ...]
+    messages_to_keep: tuple[Message, ...]
+    cut_index: int
+    estimated_tokens: int
+    kept_tokens: int
+    split_turn: bool
+    previous_summary: str | None = None
+    file_operations: FileOperations = field(default_factory=FileOperations)
 
 
-@dataclass(frozen=True, slots=True)
-class SummaryResult:
-    summary: str
+@dataclass(slots=True, frozen=True)
+class SummaryResponse:
+    text: str
     usage: Usage = field(default_factory=Usage.zero)
+
+
+@dataclass(slots=True, frozen=True)
+class CompactionResult:
+    summary: str
+    active_messages: tuple[Message, ...]
+    cut_index: int
+    tokens_before: int
+    tokens_after: int
+    split_turn: bool
+    usage: Usage
+    file_operations: FileOperations
+    attempts: int
+
+
+# Compatibility name retained from the discarded Phase 17 draft. Both names
+# represent the same provider-neutral summary payload.
+SummaryResult = SummaryResponse
 
 
 class Summarizer(Protocol):
     def __call__(
         self,
-        messages: list[Message],
-        previous_summary: str | None,
-        signal: CancellationToken | None,
-    ) -> Awaitable[SummaryResult | str] | SummaryResult | str: ...
+        conversation: str,
+        previous_summary: str | None = None,
+    ) -> SummaryResponse | str | Awaitable[SummaryResponse | str]: ...
 
 
-@dataclass(frozen=True, slots=True)
-class CompactionPreparation:
-    context_tokens: int
-    threshold_tokens: int
-    cut_index: int
-    summarized: tuple[Message, ...]
-    retained: tuple[Message, ...]
-    previous_summary: str | None
-    files: FileOperations
+@dataclass(slots=True, frozen=True)
+class BeforeCompactionDecision:
+    cancel: bool = False
+    preparation: CompactionPreparation | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class CompactResult:
-    summary: str
-    messages: tuple[Message, ...]
-    summarized_count: int
-    retained_count: int
-    context_tokens_before: int
-    estimated_tokens_after: int
-    usage: Usage
-    files: FileOperations
-    cut_index: int
-
-
-@dataclass(frozen=True, slots=True)
-class BranchSummaryResult:
-    summary: str
-    usage: Usage
-    files: FileOperations
-    from_id: str | None
-    to_id: str | None
-
-
-BeforeCompactHook: TypeAlias = Callable[
-    [CompactionPreparation],
-    Awaitable[CompactionPreparation | None] | CompactionPreparation | None,
+BeforeCompactionHook: TypeAlias = Callable[
+    [CompactionPreparation], BeforeCompactionDecision | Awaitable[BeforeCompactionDecision]
 ]
-AfterCompactHook: TypeAlias = Callable[[CompactResult], Awaitable[None] | None]
+AfterCompactionHook: TypeAlias = Callable[
+    [CompactionResult], CompactionResult | Awaitable[CompactionResult]
+]

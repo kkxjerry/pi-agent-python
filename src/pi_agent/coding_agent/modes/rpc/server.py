@@ -165,7 +165,10 @@ class RpcServer:
             return {"followUpMode": mode}
         if command == "compact":
             result = await self.session.compact("manual")
+            if result is None:
+                return {"compacted": False}
             return {
+                "compacted": True,
                 "summary": result.summary,
                 "tokensBefore": result.tokens_before,
                 "tokensAfter": result.tokens_after,
@@ -194,7 +197,7 @@ class RpcServer:
             await self.session.set_session_name(name)
             return {"name": name}
         if command == "reload_resources":
-            resources = self.session.reload_resources()
+            resources = await self.session.reload_resources()
             return {
                 "generation": resources.generation,
                 "skills": [skill.name for skill in resources.skills],
