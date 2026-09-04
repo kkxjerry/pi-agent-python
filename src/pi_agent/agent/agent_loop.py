@@ -733,6 +733,7 @@ async def _run_prepared_tool(
             if prepared.tool.timeout is not None
             else await execution
         )
+        is_error = result.is_error
         _raise_if_cancelled(signal)
     except TimeoutError:
         result = _failed_tool_result(

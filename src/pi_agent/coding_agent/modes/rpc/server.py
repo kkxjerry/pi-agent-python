@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import inspect
 import sys
 from collections.abc import AsyncIterable, Awaitable, Callable
@@ -70,6 +72,11 @@ class RpcServer:
         if behavior not in {None, "steer", "followUp"}:
             raise ValueError("streamingBehavior must be 'steer' or 'followUp'")
         images = _parse_images(request.get("images"))
+        if images and "image" not in self.session.agent.model.input:
+            raise ValueError(
+                f"model {self.session.agent.model.provider}/{self.session.agent.model.id} "
+                "does not accept image input"
+            )
         if self.session.is_streaming:
             if behavior is None:
                 raise RuntimeError("prompt while streaming requires streamingBehavior")
@@ -402,6 +409,12 @@ def _parse_images(value: Any) -> tuple[ImageContent, ...]:
         mime_type = item.get("mimeType")
         if not isinstance(data, str) or not isinstance(mime_type, str):
             raise ValueError(f"images[{index}] requires data and mimeType strings")
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except binascii.Error as exc:
+            raise ValueError(f"images[{index}].data must be valid base64") from exc
+        if not decoded:
+            raise ValueError(f"images[{index}].data must not be empty")
         images.append(ImageContent(data, mime_type))
     return tuple(images)
 

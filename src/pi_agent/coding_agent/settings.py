@@ -86,6 +86,9 @@ DEFAULT_ENV_KEYS: dict[str, str] = {
     "PI_SESSION_DIR": "session.directory",
     "PI_SESSION_ENABLED": "session.enabled",
     "PI_THEME": "ui.theme",
+    "PI_EXTENSIONS_ENABLED": "extensions.enabled",
+    "PI_PACKAGES_ROOT": "packages.root",
+    "PI_PACKAGES_AUTO_LOAD": "packages.auto_load",
     "PI_TELEMETRY_ENABLED": "telemetry.enabled",
 }
 
@@ -193,6 +196,14 @@ DEFAULT_SPECS: dict[str, SettingSpec] = {
     "resources.exclude": SettingSpec(("**/.git/**", "**/__pycache__/**"), _string_tuple),
     "resources.follow_symlinks": SettingSpec(False, _boolean),
     "packages.enabled": SettingSpec((), _string_tuple),
+    "packages.root": SettingSpec("~/.pi/agent", _string),
+    "packages.auto_load": SettingSpec(True, _boolean),
+    # Compatibility-only paths retained for callers from the early product API.
+    # The canonical Phase 21 runtime injects auth/model services directly.
+    "auth.file": SettingSpec("~/.pi/agent/auth.json", _string),
+    "models.snapshot_file": SettingSpec("~/.pi/agent/models.json", _string),
+    "extensions.enabled": SettingSpec(True, _boolean),
+    "extensions.trusted_project": SettingSpec((), _string_tuple),
     "session.enabled": SettingSpec(True, _boolean),
     "session.directory": SettingSpec("~/.pi/agent/sessions", _string),
     "session.fsync": SettingSpec(False, _boolean),

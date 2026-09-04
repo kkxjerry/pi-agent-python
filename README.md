@@ -1,91 +1,200 @@
 # pi-agent-python
 
-A Python reimplementation of the official TypeScript pi behavior pinned in [`UPSTREAM.md`](UPSTREAM.md).
+> Current milestone: **Phase 25–31 (`0.6.0.dev0`)**. Interactive TUI, bounded attachments, telemetry, approval/security boundaries, fault/property tests, benchmarks, documentation, and release packaging all run through the same `AgentSession` product path.
 
-The project does not use PaiCLI, Java ports, LangChain, LangGraph, or another Agent framework as an architectural reference. The current baseline is `earendil-works/pi@v0.84.4` (`b79e4cc`).
+Python reimplementation of the pinned official TypeScript pi baseline:
 
-## Current milestone
+```text
+repository:       earendil-works/pi
+upstream tag:     v0.84.4
+upstream commit:  b79e4cc
+Python scope:     Phase 0–31
+```
 
-Implemented through Phase 20:
+The project follows observable behavior and package ownership from the official TypeScript implementation. It does not copy another Python or Java agent framework and does not claim TypeScript extension source compatibility.
 
-- provider-neutral AI messages, models, usage, and event streams;
-- deterministic Faux and OpenAI-compatible streaming providers;
-- low-level Agent Loop and stateful Agent;
-- sequential/parallel tools, hooks, steering, follow-up, and cancellation;
-- local/injectable execution environment and read/write/edit/bash tools;
-- append-only JSONL session trees and context compaction;
-- resource discovery and layered settings;
-- one `AgentSession` used by Print, JSON, and RPC modes.
+## Implemented product surface
 
-Interactive TUI, executable extension activation, package management, OAuth breadth, and telemetry exporters are later phases.
+- provider-neutral messages, models, usage/cost, cancellation, retries, registries, and streams;
+- OpenAI-compatible streaming plus deterministic `FauxProvider` tests;
+- reusable Agent loop with sequential/parallel Tools, hooks, steering, follow-up, abort, and turn callbacks;
+- injectable filesystem/shell environment and `read`, `write`, `edit`, and `bash` coding Tools;
+- append-only JSONL session trees, branch navigation, compaction, resource loading, and layered settings;
+- one `AgentSession` shared by Print, JSONL, RPC, Interactive TUI, extensions, approval, and telemetry;
+- private `AuthStorage`, `CredentialResolver`, model/provider selection, and refreshable credentials;
+- transactional Python `ExtensionHost` activation and local-directory `PackageManager` installs;
+- Unicode-aware terminal rendering, multiline editing, completion, scrolling, and live Agent/Tool events;
+- bounded PNG/JPEG/GIF/WebP processing and TUI `@file` / `@image:path` attachments;
+- Run/Turn/Tool traces, Token/Cost metrics, JSONL and generic HTTP JSON exporters;
+- fail-closed approval gates, exact session grants, explicit glob grants, audit records, and documented host-permission boundaries;
+- deterministic TypeScript-vs-Python Agent Core parity plus repeated live Coding Agent trace comparison.
 
-## Install for development
+Exact boundaries are documented in [SCOPE.md](SCOPE.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [PARITY.md](PARITY.md).
+
+## Requirements
+
+- Python 3.11 or newer;
+- `uv` for the repository workflow;
+- Node.js only for re-running the pinned TypeScript parity/benchmark harness;
+- Pillow only when an oversized image must be resized.
 
 ```bash
-uv sync --all-groups
+uv sync --all-extras --python 3.11
 ```
 
 ## CLI
 
-Print mode:
+### Interactive
+
+With a terminal and no explicit prompt, interactive mode is selected automatically:
 
 ```bash
-export OPENAI_API_KEY=...
-uv run pi-py -p "Read the failing test, fix it, and run the test"
+uv run pi-py
+uv run pi-py --mode interactive
+uv run pi-py --approval prompt --telemetry-jsonl .pi/telemetry.jsonl
 ```
 
-JSON event stream:
+The interactive client is a view over `AgentSession`; it does not own a second Agent loop. Built-in commands are:
 
-```bash
-uv run pi-py --mode json -p "Inspect this repository"
+```text
+/help
+/model [provider/model]
+/thinking [level]
+/new [name]
+/session
+/compact
+/reload
+/packages
+/clear
+/quit
 ```
 
-RPC mode:
+Files can be attached in the editor with `@path`; use `@image:path` to require image handling. Workspace-bound path validation prevents attachment traversal outside approved roots.
+
+### Print, JSON, and RPC
 
 ```bash
+uv run pi-py -p "Read README.md and summarize it"
+uv run pi-py --mode json -p "Inspect the repository"
 uv run pi-py --mode rpc
 ```
 
-RPC accepts one JSON object per LF-delimited input line:
+Print emits the final assistant text. JSON mode emits LF-delimited AgentSession events. RPC accepts LF-delimited commands while using the same session, queues, compaction controller, and Tool runtime.
 
-```json
-{"id":"1","command":"prompt","message":"Inspect the repository"}
-{"id":"2","command":"get_state"}
-{"id":"3","command":"shutdown"}
-```
-
-Use an in-memory no-session run:
+### DashScope / Qwen
 
 ```bash
-uv run pi-py --no-session -p "Summarize README.md"
+export DASHSCOPE_API_KEY="..."
+uv run pi-py --provider dashscope --no-session -p "Reply with exactly PONG"
 ```
 
-Resume a named JSONL session:
+For `dashscope`, the CLI defaults to `qwen-plus` and the Beijing OpenAI-compatible endpoint. `--model` and `--base-url` can override those defaults. The key and endpoint must belong to the same region.
+
+### Approval
+
+Approval is opt-in at the CLI boundary:
 
 ```bash
-uv run pi-py --session ~/.pi/sessions/example.jsonl -p "Continue the work"
+uv run pi-py --approval prompt -p "Modify the requested file"
+uv run pi-py --approval deny -p "Inspect without mutations"
 ```
 
-Baseline and parity metadata:
+Supported modes are `off`, `prompt`, `deny`, and `allow`. `--approval-audit PATH` appends redacted decision records. The gate is authorization logic, not an operating-system sandbox.
+
+### Telemetry
+
+```bash
+uv run pi-py \
+  --telemetry-jsonl .pi/telemetry.jsonl \
+  -p "Run the tests"
+```
+
+Prompt, Tool argument, and Tool result payloads are omitted by default. `--telemetry-payloads` enables them, but known credentials and sensitive fields are still redacted before export.
+
+### Metadata
 
 ```bash
 uv run pi-py upstream --json
 uv run pi-py parity --json
 ```
 
-## Python API
+## Local package CLI
+
+`pi-pkg` installs trusted local package directories transactionally:
+
+```bash
+uv run pi-pkg install ./my-package
+uv run pi-pkg list
+uv run pi-pkg verify
+uv run pi-pkg update my-package ./my-package-v2
+uv run pi-pkg remove my-package
+```
+
+A package can contribute Python extensions and resource paths through `pi-package.json`:
+
+```json
+{
+  "name": "example-package",
+  "version": "1.0.0",
+  "extensions": ["extensions/main.py"],
+  "skills": ["skills"],
+  "prompts": ["prompts"],
+  "themes": ["themes"],
+  "dependencies": []
+}
+```
+
+Install, update, remove, lock persistence, checksum verification, `ExtensionHost` reconciliation, and resource reload form one rollback chain. Hosted registries and automatic dependency installation remain outside scope.
+
+## Python SDK
 
 ```python
 import asyncio
+from pathlib import Path
 
-from pi_agent.coding_agent import AgentSessionOptions, create_agent_session
+from pi_agent.ai import Model, OpenAICompatibleProvider
+from pi_agent.coding_agent import (
+    ApprovalDecision,
+    ApprovalGate,
+    ApprovalPolicy,
+    ApprovalRequest,
+    CreateAgentSessionOptions,
+    create_agent_session,
+)
+
+
+async def approve(request: ApprovalRequest) -> ApprovalDecision:
+    print(request.tool_name, request.reasons)
+    return ApprovalDecision("deny", "SDK example is read-only")
 
 
 async def main() -> None:
-    created = await create_agent_session(AgentSessionOptions(cwd=".", no_session=True))
+    provider = OpenAICompatibleProvider()
+    model = Model(
+        api="openai-completions",
+        provider="openai",
+        id="gpt-4.1-mini",
+        name="gpt-4.1-mini",
+        base_url="https://api.openai.com/v1",
+        context_window=128_000,
+        max_tokens=16_384,
+    )
+    gate = ApprovalGate(
+        ApprovalPolicy(Path.cwd()),
+        session_id="pending",
+        prompt=approve,
+    )
+    created = await create_agent_session(
+        CreateAgentSessionOptions(
+            cwd=".",
+            model=model,
+            stream_fn=provider.stream,
+            approval_gate=gate,
+        )
+    )
     session = created.session
     try:
-        result = await session.prompt("Read README.md and summarize the project")
+        result = await session.prompt("Read README.md")
         print(result.final_assistant)
     finally:
         await session.close()
@@ -94,82 +203,85 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-A deterministic provider can be injected for tests:
+For deterministic tests, inject `FauxProvider`, an in-memory session, and a fake or local `ExecutionEnv`.
+
+## Python extensions
 
 ```python
-from pi_agent.ai import AssistantMessage, FauxProvider, TextContent
-from pi_agent.coding_agent import AgentSessionOptions, create_agent_session
+class ReviewTool:
+    name = "review"
 
-provider = FauxProvider([AssistantMessage(content=[TextContent("done")], stop_reason="stop")])
-created = await create_agent_session(
-    AgentSessionOptions(cwd=".", no_session=True, stream_fn=provider.stream)
-)
-session = created.session
+
+def activate(api):
+    api.register_tool(ReviewTool())
+    api.register_command(
+        "review.run",
+        lambda args, context: f"review {' '.join(args)}",
+    )
+    api.append_system_prompt("Keep repository reviews concise.")
 ```
 
-## Session model
+`ExtensionHost` stages every contribution, validates capability and name conflicts, and only swaps the live runtime after activation succeeds. Project extensions are trusted in-process Python code; trust approval prevents accidental import but is not code isolation.
 
-Session files are append-only JSONL trees. Normal entries carry `id` and `parentId`; navigation appends a cursor instead of deleting another branch. Compaction adds a summary entry and changes the active provider context without erasing the original message records.
+## Images and attachments
 
-A valid last JSON record does not require a trailing newline. A malformed final fragment can be repaired only when explicitly requested; corruption in the middle of the file is rejected.
+```python
+from pi_agent.coding_agent import ImageProcessor
 
-## Configuration precedence
-
-```text
-default < global < project < environment < CLI < runtime
+attachment = ImageProcessor().process_path("screenshot.png")
 ```
 
-Global settings default to `~/.pi/settings.json`; project settings use `.pi/settings.json` or `.pi/settings.toml`. Every resolved value keeps a source record.
-
-## Verification
+The processor checks byte size, MIME signature, dimensions, and decoded pixel count before constructing model content. Pillow is imported lazily only when resizing is necessary:
 
 ```bash
-uv lock --check
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy --strict src
-uv run pytest -q
+uv sync --extra image
+```
+
+## Telemetry SDK
+
+```python
+from pi_agent.telemetry import (
+    JsonlTelemetryExporter,
+    MeterProvider,
+    SimpleSpanProcessor,
+    TracerProvider,
+    instrument_agent_session,
+)
+
+exporter = JsonlTelemetryExporter(".pi/telemetry.jsonl")
+traces = TracerProvider((SimpleSpanProcessor(exporter),))
+metrics = MeterProvider((exporter,))
+instrumentation = instrument_agent_session(session, traces, metrics)
+```
+
+Exporter failures are retained as diagnostics and do not change Agent or Tool results.
+
+## TypeScript-vs-Python Agent benchmark
+
+The comparison harness runs the pinned official TypeScript Coding Agent and this Python implementation with the same model, prompt, Tool budget, context window, output limit, isolated HOME, and isolated workspace:
+
+```bash
+export DASHSCOPE_API_KEY="..."
+make benchmark-agents
+```
+
+It records raw JSONL, per-event timings, Tool paths and batches, Token usage, changed files, validators, and a Markdown report. Live model runs are observational and should use multiple repetitions; deterministic Agent Core parity is checked separately. See [benchmarks/agent_compare/README.md](benchmarks/agent_compare/README.md).
+
+## Repository checks
+
+```bash
 python3.11 scripts/check_phase_0_3.py
-python3.11 scripts/check_phase_8_12.py
-python3.11 scripts/check_phase_17_20.py
-git diff --check
+uv run --python 3.11 python scripts/check_phase_8_12.py
+uv run --python 3.11 python scripts/check_phase_13_16.py
+uv run --python 3.11 python scripts/check_phase_17_20.py
+uv run --python 3.11 python scripts/check_phase_21_24.py
+uv run --python 3.11 python scripts/check_phase_25_31.py
+uv run --python 3.11 pytest -q
+uv run --python 3.11 ruff check .
+uv run --python 3.11 ruff format --check .
+uv run --python 3.11 mypy --strict src
+uv build
+uv run --python 3.11 python scripts/check_phase_31_release.py
 ```
 
-The default local execution environment is not a sandbox. Tools run with the permissions of the Python process.
-
-
-## Credentials, extensions, and packages
-
-Phase 21–24 adds a product layer above `AgentSession`:
-
-```python
-from pi_agent.coding_agent.product import (
-    CodingAgentRuntime,
-    CodingAgentRuntimeOptions,
-)
-
-runtime = CodingAgentRuntime(
-    session,
-    options=CodingAgentRuntimeOptions(
-        package_root="~/.pi/agent",
-        extension_paths=(project_extension,),
-    ),
-)
-await runtime.start()
-result = await runtime.invoke_command("my-extension.command", ["argument"])
-await runtime.close()
-```
-
-Local package operations are also available headlessly:
-
-```bash
-pi-pkg install ./my-pi-package
-pi-pkg list
-pi-pkg verify
-pi-pkg update my-package ./my-pi-package
-pi-pkg remove my-package
-```
-
-Packages are staged and integrity-locked. Phase 23 does not execute install scripts or download registry content. Python extensions are trusted in-process code; capability policy is a load gate, not process isolation.
-
-Package mutations are coordinated with extension-host reload: install, update, and remove keep enough backup state to restore the prior package set when candidate extension activation fails.
+No local Docker, Lima, Colima, or `limactl` is required or used by the verification suite.

@@ -1,0 +1,27 @@
+{
+  "tasks": [
+    {
+      "id": "read_only",
+      "fixture": "fixtures/read_only",
+      "prompt": "Inspect this repository using the available tools. Read the runtime constants under src/ and report their values in exactly this format: SERVICE=<value> RETRIES=<value> TIMEOUT=<value>. Do not modify any file.",
+      "validator": {
+        "kind": "exact_output",
+        "expected": "SERVICE=TraceBench RETRIES=4 TIMEOUT=12",
+        "require_clean_workspace": true
+      }
+    },
+    {
+      "id": "fix_slugify",
+      "fixture": "fixtures/fix_slugify",
+      "prompt": "Fix slugify.py so every test passes. Do not modify test_slugify.py. Make the smallest reasonable code change, run python -m unittest -q, then give a concise summary.",
+      "validator": {
+        "kind": "command",
+        "command": ["python3", "-m", "unittest", "-q"],
+        "additionalCommands": [
+          ["python3", "{benchmark}/validators/slugify_regression.py"]
+        ],
+        "protected_files": ["test_slugify.py"]
+      }
+    }
+  ]
+}

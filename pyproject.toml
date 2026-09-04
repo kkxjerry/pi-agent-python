@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pi-agent-python"
-version = "0.5.0.dev0"
+version = "0.6.0.dev0"
 description = "Python reimplementation of the official TypeScript pi agent toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "pi-agent-python contributors" }]
 dependencies = []
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
@@ -22,6 +22,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+image = ["Pillow>=10.4"]
 dev = [
   "mypy>=1.15,<2",
   "pytest>=9,<10",

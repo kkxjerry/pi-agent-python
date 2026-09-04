@@ -1,4 +1,4 @@
-"""Stable Python SDK for the coding-agent product layer."""
+"""Stable public API for the coding-agent product layer."""
 
 from __future__ import annotations
 
@@ -18,6 +18,16 @@ from .agent_session import (
     SessionStats,
     ThinkingLevelChangedEvent,
 )
+from .approval import (
+    ApprovalAuditSink,
+    ApprovalDecision,
+    ApprovalGate,
+    ApprovalPolicy,
+    ApprovalPrompt,
+    ApprovalRequest,
+    ApprovalRule,
+    compose_before_tool_hooks,
+)
 from .auth import AuthStorage, Credential, CredentialResolver
 from .configuration import (
     build_compaction_settings,
@@ -25,6 +35,7 @@ from .configuration import (
     session_directory,
 )
 from .extensions import ExtensionHost, ExtensionPolicy
+from .images import ImageLimits, ImageProcessingError, ImageProcessor, ProcessedImage
 from .model_access import ModelAccess, PreparedModel
 from .modes import (
     PrintModeOptions,
@@ -41,6 +52,7 @@ from .packages import PackageManager, PackageManifest
 from .runtime import (
     CodingAgentRuntime,
     CodingAgentRuntimeOptions,
+    RuntimeState,
     create_coding_agent_runtime,
 )
 from .sdk import (
@@ -50,6 +62,15 @@ from .sdk import (
     create_model_summarizer,
 )
 from .sdk import create_agent_session as _create_agent_session
+from .security import (
+    ContainerMount,
+    ContainerSandboxSpec,
+    SecurityBoundaryError,
+    SecurityPosture,
+    build_container_command,
+    container_security_posture,
+    default_security_posture,
+)
 from .settings import (
     DEFAULT_ENV_KEYS,
     DEFAULT_SPECS,
@@ -64,7 +85,6 @@ from .settings import (
     save_settings_file,
 )
 
-# Compatibility aliases retained from the Phase 17 public surface.
 AgentSessionOptions = CreateAgentSessionOptions
 Settings = SettingsSnapshot
 SettingSource = SettingOrigin
@@ -85,12 +105,21 @@ __all__ = [
     "AgentSessionOptions",
     "AgentSessionState",
     "AgentSettledEvent",
+    "ApprovalAuditSink",
+    "ApprovalDecision",
+    "ApprovalGate",
+    "ApprovalPolicy",
+    "ApprovalPrompt",
+    "ApprovalRequest",
+    "ApprovalRule",
     "AuthStorage",
     "CodingAgentRuntime",
     "CodingAgentRuntimeOptions",
     "CompactionEndEvent",
     "CompactionRunResult",
     "CompactionStartEvent",
+    "ContainerMount",
+    "ContainerSandboxSpec",
     "CreateAgentSessionOptions",
     "CreateAgentSessionResult",
     "Credential",
@@ -98,14 +127,21 @@ __all__ = [
     "EntryAppendedEvent",
     "ExtensionHost",
     "ExtensionPolicy",
+    "ImageLimits",
+    "ImageProcessingError",
+    "ImageProcessor",
     "ModelAccess",
     "PackageManager",
     "PackageManifest",
     "PreparedModel",
     "PrintModeOptions",
+    "ProcessedImage",
     "PromptOptions",
     "QueueUpdateEvent",
     "RpcServer",
+    "RuntimeState",
+    "SecurityBoundaryError",
+    "SecurityPosture",
     "SessionInfoChangedEvent",
     "SessionStats",
     "SettingOrigin",
@@ -119,11 +155,15 @@ __all__ = [
     "SettingsWarning",
     "ThinkingLevelChangedEvent",
     "build_compaction_settings",
+    "build_container_command",
     "build_resource_loader_config",
+    "compose_before_tool_hooks",
+    "container_security_posture",
     "create_agent_session",
     "create_agent_session_only",
     "create_coding_agent_runtime",
     "create_model_summarizer",
+    "default_security_posture",
     "load_settings_file",
     "parse_json_line",
     "run_json_mode",

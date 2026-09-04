@@ -171,12 +171,21 @@ async def test_rpc_reports_invalid_json_unknown_commands_and_state(
 
     await server.handle_line("not json\n")
     await server.handle_request({"id": "x", "type": "missing"})
+    await server.handle_request(
+        {
+            "id": "i",
+            "type": "prompt",
+            "message": "image",
+            "images": [{"data": "not-base64", "mimeType": "image/png"}],
+        }
+    )
     await server.handle_request({"id": "s", "type": "get_state"})
     await server.handle_request({"id": "n", "type": "set_session_name", "name": "demo"})
     await server.close()
 
     assert output[0]["success"] is False
     assert next(item for item in output if item.get("id") == "x")["success"] is False
+    assert next(item for item in output if item.get("id") == "i")["success"] is False
     state = next(item for item in output if item.get("id") == "s")["data"]
     assert state["sessionId"] == session.session_id
     assert state["isIdle"] is True

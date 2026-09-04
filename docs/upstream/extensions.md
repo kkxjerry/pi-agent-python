@@ -80,4 +80,4 @@ def activate(api: ExtensionAPI) -> None:
 ```
 
 Distribution may use Python entry points, local modules, or package metadata.
-This is deferred to Phase 22.
+This contract is implemented by the Python-native Phase 22 extension runtime. TypeScript source compatibility remains outside scope.

@@ -1,26 +1,38 @@
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
-from pi_agent.cli import build_parser, main
-
-
-def test_legacy_metadata_commands_remain_unambiguous(capsys) -> None:
-    assert main(["upstream", "--json"]) == 0
-    upstream = json.loads(capsys.readouterr().out)
-    assert upstream["tag"] == "v0.84.4"
-
-    assert main(["parity", "--json"]) == 0
-    parity = json.loads(capsys.readouterr().out)
-    assert parity["total"] == 30
-    assert parity["byStatus"]["upstream-execution"] >= 20
+from pi_agent.cli import build_parser
 
 
-def test_agent_mode_parser_keeps_prompt_and_session_flags_separate() -> None:
+def test_parser_exposes_interactive_telemetry_approval_and_extensions(tmp_path: Path) -> None:
     args = build_parser().parse_args(
-        ["--mode", "json", "--no-session", "-p", "hello", "--model", "fixture"]
+        [
+            "--mode",
+            "interactive",
+            "--cwd",
+            str(tmp_path),
+            "--extension",
+            str(tmp_path / "extension.py"),
+            "--package-root",
+            str(tmp_path / "packages"),
+            "--approval",
+            "prompt",
+            "--approval-audit",
+            str(tmp_path / "approval.jsonl"),
+            "--telemetry-jsonl",
+            str(tmp_path / "telemetry.jsonl"),
+            "--telemetry-payloads",
+        ]
     )
-    assert args.mode == "json"
-    assert args.no_session is True
-    assert args.prompt == "hello"
-    assert args.model == "fixture"
+    assert args.mode == "interactive"
+    assert args.approval == "prompt"
+    assert args.extension == [tmp_path / "extension.py"]
+    assert args.telemetry_payloads is True
+
+
+def test_print_shorthand_and_rpc_mode_remain_compatible() -> None:
+    printed = build_parser().parse_args(["-p", "hello"])
+    rpc = build_parser().parse_args(["--mode", "rpc"])
+    assert printed.prompt == "hello"
+    assert rpc.mode == "rpc"

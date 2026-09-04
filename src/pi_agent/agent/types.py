@@ -32,6 +32,7 @@ class AgentToolResult:
     usage: Usage | None = None
     added_tool_names: list[str] | None = None
     terminate: bool = False
+    is_error: bool = False
 
 
 ToolUpdateCallback: TypeAlias = Callable[[AgentToolResult], None]

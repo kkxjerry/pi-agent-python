@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from pi_agent.agent import Agent, AgentOptions, AgentThinkingLevel, AgentTool
+from pi_agent.agent.types import BeforeToolCall
 from pi_agent.ai import (
     Context,
     Model,
@@ -33,6 +34,7 @@ from pi_agent.harness.compaction import (
 from pi_agent.harness.session import SessionManager, SessionRepository, reconstruct_context
 
 from .agent_session import AgentSession
+from .approval import ApprovalGate, compose_before_tool_hooks
 from .configuration import build_resource_loader_config, session_directory
 from .settings import SettingsResolver, SettingsSnapshot
 
@@ -61,6 +63,9 @@ class CreateAgentSessionOptions:
     summarizer: Summarizer | None = None
     branch_summarizer: Summarizer | None = None
     auto_compaction_enabled: bool | None = None
+    before_tool_call: BeforeToolCall | None = None
+    approval_gate: ApprovalGate | None = None
+    approval_manager: Any | None = None
     api_key: str | None = None
 
 
@@ -110,6 +115,9 @@ async def create_agent_session(
 
     env = selected.env or create_local_execution_env(cwd)
     tools = _select_tools(selected, settings, env)
+    if selected.approval_manager is not None:
+        selected.approval_manager.session_id = manager.header.id
+        tools = selected.approval_manager.guard_tools(tools)
     system_prompt = SystemPromptBuilder(selected.system_prompt).build(resources)
     thinking_level = _resolve_thinking_level(settings, reconstructed.thinking_level, model)
     stream_options = _stream_options(settings, manager.header.id, selected.api_key)
@@ -132,6 +140,12 @@ async def create_agent_session(
         else:
             controller = CompactionController(controller_settings, summarizer)
 
+    if selected.approval_gate is not None:
+        selected.approval_gate.session_id = manager.header.id
+    before_tool_call = compose_before_tool_hooks(
+        selected.before_tool_call,
+        selected.approval_gate,
+    )
     agent = Agent(
         AgentOptions(
             model=model,
@@ -141,6 +155,7 @@ async def create_agent_session(
             tools=tools,
             messages=list(copy.deepcopy(reconstructed.messages)),
             stream_options=stream_options,
+            before_tool_call=before_tool_call,
         )
     )
     session = AgentSession(

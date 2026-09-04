@@ -1,94 +1,95 @@
-# Phase 21–24 acceptance evidence
+# Phase 21–24 implementation evidence
 
-Baseline remains the pinned official TypeScript repository recorded in `UPSTREAM.md`. This milestone is a Python-native behavioral implementation. It is **not** marked `UPSTREAM` unless a dedicated fixture executes the pinned TypeScript package and compares the same contract.
+Baseline: `earendil-works/pi@v0.84.4` (`b79e4cc`).
 
-## Phase 21 — credentials and model access boundary
+## Canonical checkpoint
 
-Implemented in `src/pi_agent/coding_agent/auth.py` and `model_access.py`.
+`phase-21-24` points to commit `67ff31a`. During Phase 25–31 development, a second uncommitted product API was introduced alongside that checkpoint. Final cleanup retained the published Phase 21–24 architecture and removed the competing `AuthStore`/`ExtensionLoader`/`PackageSource`/multi-session-service draft rather than pretending both were supported.
 
-Accepted behavior:
+## Phase 21 — auth and model access
 
-- API-key and OAuth credential records with secret-free public metadata;
-- atomic JSON replacement and a separate cross-process lock;
-- POSIX `0600` credential-file mode;
-- explicit → environment → local-store resolution precedence;
-- expiry skew and single-flight OAuth refresh, including provider identity validation;
-- corrupt or unsupported stores fail closed;
-- provider registry model selection and credentialized `StreamOptions` are composed by `ModelAccess`.
+Evidence:
 
-The default store is plaintext and is not described as an OS keychain. A keychain-backed resolver can replace it at the product boundary.
+- `src/pi_agent/coding_agent/auth.py`
+- `src/pi_agent/coding_agent/model_access.py`
+- `tests/coding_agent/test_auth.py`
+- `tests/coding_agent/test_model_access.py`
 
-## Phase 22 — Python extension API and activation lifecycle
+Covered invariants:
 
-Implemented in `src/pi_agent/coding_agent/extensions/`.
+- `AuthStorage` uses atomic replacement and private POSIX permissions;
+- secret values are redacted from credential representations;
+- `CredentialResolver` applies explicit, stored, and environment precedence;
+- expired credentials can invoke an injected refresh callback;
+- concurrent refresh is serialized;
+- `ModelAccess` resolves provider-scoped models, rejects ambiguous IDs, and injects credentials into request options;
+- dynamic provider model refresh uses the existing `ProviderRegistry`.
 
-Accepted behavior:
+## Phase 22 — Python extensions
 
-- deterministic descriptor ordering and stable contribution registries;
-- staged tools, commands, services, system-prompt fragments, event handlers, and disposers;
-- collision checks before contributions become visible;
-- sync or async activation, commands, events, and disposal;
-- reverse-order disposal;
-- strict batch rollback when a later extension fails;
-- transactional reload: a failed single-extension or whole-host candidate does not replace the active extension set;
-- path and declared-capability policy checks before import.
+Evidence:
 
-Extensions execute in the Python process. Capability checks are activation gates, not a sandbox.
+- `src/pi_agent/coding_agent/extensions/types.py`
+- `src/pi_agent/coding_agent/extensions/host.py`
+- `tests/coding_agent/test_extensions.py`
+- `tests/coding_agent/test_runtime_extensions.py`
 
-## Phase 23 — local package manager
+Covered invariants:
 
-Implemented in `src/pi_agent/coding_agent/packages/` and exposed through `pi-pkg`.
+- descriptor roots and requested capabilities are checked before activation;
+- activation writes Tools, commands, services, prompt fragments, event handlers, and disposers into an isolated staged contribution;
+- duplicate Tool/command/service names fail before publication;
+- failed activation disposes staged resources;
+- reload constructs a candidate before replacing the previous live handle;
+- event-handler failures are recorded with extension identity;
+- disposal runs in reverse registration order.
 
-Accepted behavior:
+## Phase 23 — local packages
 
-- `pi-package.json` parsing and path-traversal rejection;
-- declared local extension/resource paths must exist;
-- symbolic links are rejected during package copy;
-- dependency presence checks and dependent-aware removal;
-- staging inside the package root, atomic directory replacement, and atomic lock writes;
-- deterministic SHA-256 integrity over relative paths and bytes;
-- install/update/remove receipts that can finalize or restore the previous directory and lock entry; stale receipts fail rather than overwriting a newer cross-process update;
-- list, verify, update, and remove operations;
-- file and directory-style Python extension entry points receive deterministic package-qualified names;
-- local directories and `file://` sources only.
+Evidence:
 
-Network registries, package install scripts, and dependency downloading are deliberately outside Phase 23.
+- `src/pi_agent/coding_agent/packages/types.py`
+- `src/pi_agent/coding_agent/packages/manager.py`
+- `src/pi_agent/coding_agent/package_cli.py`
+- `tests/coding_agent/test_packages.py`
+- `tests/coding_agent/test_package_cli.py`
+- `tests/coding_agent/test_runtime_extensions.py`
 
-## Phase 24 — AgentSession product integration
+Covered invariants:
 
-Implemented in `src/pi_agent/coding_agent/runtime.py`.
+- package manifests and resource paths are validated below the package root;
+- symlinks and traversal are rejected;
+- local-directory install/update/remove use staging, backups, and atomic lock replacement;
+- SHA-256 integrity covers relative paths and file bytes;
+- dependency checks prevent invalid removal;
+- staged receipts support finalize or rollback;
+- `pi-pkg` exposes local install/update/remove/list/verify and JSON output.
 
-Accepted behavior:
+Hosted package registries, remote source resolution, and automatic dependency installation are not part of this phase.
 
-- one runtime composes an existing AgentSession with credentials, packages, and extensions;
-- extension tools and prompt fragments are applied only above Agent Core;
-- base AgentSession tools and system prompt are restored on close or failed startup;
-- session events are forwarded to extension handlers;
-- extension commands receive the current session and shared services;
-- package install/update validates extension activation before finalizing the package backup;
-- failed package install, update, or removal restores the previous package files and lock, then reloads or preserves the prior extension set;
-- package and extension mutation is rejected while the agent is running;
-- installed package roots are synchronized into the Session resource loader before reload; the original roots and prompt are restored when the runtime closes;
-- resource reload is invoked after package-set changes.
+## Phase 24 — AgentSession runtime attachment
 
-## Deterministic evidence
+Evidence:
 
-Focused tests:
+- `src/pi_agent/coding_agent/runtime.py`
+- `tests/coding_agent/test_runtime.py`
+- `tests/coding_agent/test_runtime_extensions.py`
+
+Covered invariants:
+
+- `CodingAgentRuntime` attaches credentials, local packages, and one `ExtensionHost` above an existing `AgentSession`;
+- startup validates a complete candidate before changing live Tools or the system prompt;
+- Tool name collisions do not mutate the session;
+- package mutation finalizes only after extension and resource reconciliation succeeds;
+- install/update/remove rollback restores package files, lock state, resource roots, and previous extension contributions;
+- closing the runtime waits for idle, disposes extensions, and restores the original Tool list and system prompt.
+
+This is intentionally a per-session runtime attachment. A separate shared-services/multi-session product API is not claimed.
+
+## Gate
 
 ```bash
-uv run --python 3.11 pytest -q \
-  tests/coding_agent/test_auth.py \
-  tests/coding_agent/test_model_access.py \
-  tests/coding_agent/test_extensions.py \
-  tests/coding_agent/test_packages.py \
-  tests/coding_agent/test_runtime_extensions.py \
-  tests/coding_agent/test_package_cli.py
+uv run --python 3.11 python scripts/check_phase_21_24.py
 ```
 
-Milestone gate:
-
-```bash
-python3.11 scripts/check_phase_21_24.py
-```
-
-Full acceptance additionally requires formatting, lint, strict typing, the complete test suite, all earlier milestone gates, a wheel/sdist build, and clean-install command smoke tests.
+The phase remains `SOURCE` in `PARITY.md`: no Phase 21–24 product record is labelled `upstream-execution` because the pinned TypeScript package was not executed to generate exact product-level golden streams for these scenarios.

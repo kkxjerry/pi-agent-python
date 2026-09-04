@@ -74,7 +74,8 @@ async def main() -> int:
     missing = [path for path in REQUIRED if not (ROOT / path).is_file()]
     if missing:
         raise SystemExit(f"phase 21-24 gate failed: missing {', '.join(missing)}")
-    if __version__ != "0.5.0.dev0":
+    major, minor = (int(item) for item in __version__.split(".")[:2])
+    if (major, minor) < (0, 5):
         raise SystemExit(f"phase 21-24 gate failed: unexpected version {__version__}")
 
     with tempfile.TemporaryDirectory(prefix="pi-phase-21-24-") as directory:

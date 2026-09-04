@@ -2,7 +2,11 @@
 
 Baseline: `earendil-works/pi@v0.84.4` (`b79e4cc`).
 
-Legend: `DONE` = implemented and covered by executable local evidence, `BOUNDARY` = intentionally deferred.
+Legend:
+
+- `DONE` — implemented and covered by executable parity tests or phase gates;
+- `SOURCE` — mapped to the pinned TypeScript source contract and covered locally, but no exact new TypeScript execution fixture exists for that product scenario;
+- `BOUNDARY` — intentionally not claimed.
 
 | Area | Status | Evidence |
 |---|---|---|
@@ -14,31 +18,56 @@ Legend: `DONE` = implemented and covered by executable local evidence, `BOUNDARY
 | Phase 4 AI data model | DONE | `tests/ai/test_types.py` |
 | Phase 5 EventStream | DONE | `tests/ai/test_event_stream.py` |
 | Phase 6 Faux/OpenAI-compatible providers | DONE | `tests/ai/*` |
-| Phase 7 low-level loop and recovery | DONE | `tests/agent/test_agent_loop.py` |
+| Phase 7 low-level loop and recovery | DONE | Agent-loop parity tests |
 | Phase 8 parallel completion/result ordering | DONE | Agent and parity tests |
 | Phase 9 stateful Agent and queues | DONE | state/listener/queue tests |
-| Phase 10 hooks, timeout, stop, next-turn control | DONE | tool/turn-control tests |
-| Phase 11 read/write/edit/bash | DONE | coding-tool tests |
-| Phase 12 execution environment and AgentHarness | DONE | harness/environment tests |
-| Phase 13 append-only JSONL session tree | DONE | `tests/session/test_session_manager.py` |
-| Phase 14 compaction and branch summaries | DONE | `tests/harness/test_compaction.py` |
-| Phase 15 resource discovery and prompt composition | DONE | `tests/harness/test_resource_loader.py` |
-| Phase 16 layered settings and source attribution | DONE | `tests/coding_agent/test_settings.py` |
-| Phase 17 unified AgentSession | DONE | `tests/coding_agent/test_agent_session.py` |
-| Phase 18 Print mode | DONE | `tests/coding_agent/test_modes.py` |
-| Phase 19 JSON event mode | DONE | `tests/coding_agent/test_modes.py` |
-| Phase 20 LF-delimited RPC mode | DONE | `tests/coding_agent/test_modes.py`, `docs/upstream/rpc-protocol.md` |
-| Executable extension activation/package manager | BOUNDARY | later phases |
-| Interactive TUI | BOUNDARY | later phase |
-| Provider/OAuth breadth and telemetry exporters | BOUNDARY | later phases |
+| Phase 10 hooks, timeout, stop, next-turn control | DONE | Tool/turn-control tests |
+| Phase 11 read/write/edit/bash | DONE | coding-Tool tests |
+| Phase 12 ExecutionEnv and AgentHarness | DONE | harness/environment tests |
+| Phase 13 append-only JSONL session tree | DONE | session store/manager tests |
+| Phase 14 compaction and branch summaries | DONE | compaction tests |
+| Phase 15 resource discovery and prompt composition | DONE | resource-loader tests |
+| Phase 16 layered settings and source attribution | DONE | settings tests |
+| Phase 17 unified AgentSession | DONE | AgentSession tests |
+| Phase 18 Print mode | DONE | mode and CLI runtime tests |
+| Phase 19 JSON event mode | DONE | mode and CLI runtime tests |
+| Phase 20 LF-delimited RPC mode | DONE | RPC tests and protocol map |
+| Phase 21 AuthStorage and model access | SOURCE | auth/model-access tests and phase gate |
+| Phase 22 Python ExtensionHost runtime | SOURCE | activation/reload/rollback tests and source map |
+| Phase 23 local package manager | SOURCE | package/runtime/`pi-pkg` tests |
+| Phase 24 AgentSession runtime attachment | SOURCE | runtime integration and rollback tests |
+| Phase 25 terminal frame/surface and ANSI renderer | SOURCE | TUI primitive/property tests |
+| Phase 26 editor and reusable components | SOURCE | editor/component tests |
+| Phase 27 interactive AgentSession client | SOURCE | scripted `MemoryTerminal` tests |
+| Phase 28 commands and completion | SOURCE | command/completion/app tests |
+| Phase 29 bounded attachments and image processing | SOURCE | attachment/image tests |
+| Phase 30 traces, metrics, and exporters | SOURCE | telemetry, fault, and CLI tests |
+| Phase 31 approval/security/release gate | SOURCE | approval/security/integration/release tests |
+| TypeScript extension ABI/source compatibility | BOUNDARY | Python activation API only |
+| Operating-system sandbox and privilege separation | BOUNDARY | approval is authorization, not isolation |
+| Hosted package registry/dependency solver | BOUNDARY | trusted local package directories only |
+| Vendor browser/device OAuth UI and OS keychain | BOUNDARY | injected refresh callback and file storage only |
+| OTLP protobuf/backend compatibility | BOUNDARY | project JSONL and generic HTTP JSON only |
 
 ## Executed fixture coverage
 
-The pinned TypeScript runner has executed 20 deterministic scenarios. Python parity tests preserve event ordering, queue injection positions, stop reasons, ToolCall IDs, ToolResult IDs, tool completion order, and transcript order. Timestamps, random IDs not fixed by a scenario, and provider token counts remain normalized.
+The pinned TypeScript runner executes 20 deterministic Agent Core scenarios. Python parity tests preserve event ordering, queue injection positions, stop reasons, ToolCall IDs, ToolResult IDs, Tool completion order, and transcript order. Timestamps, generated IDs not fixed by a scenario, and provider token counts are normalized.
 
-Phase 13–20 storage and product-mode behavior is tested against the documented and source-mapped upstream contracts. New golden files are not labelled `upstream-execution` unless the pinned TypeScript implementation itself was executed for that exact scenario.
+No Phase 21–31 row is labelled as a new `upstream-execution` fixture. Those product layers are source-mapped and executable locally, but the pinned TypeScript package was not used to generate exact product-level golden records for every scenario.
 
-| Phase 21 credential storage/refresh | SOURCE | `tests/coding_agent/test_auth.py` |
-| Phase 22 extension activation/lifecycle | SOURCE | `tests/coding_agent/test_extensions.py` |
-| Phase 23 package manager/integrity lock | SOURCE | `tests/coding_agent/test_packages.py` |
-| Phase 24 AgentSession extension/package runtime | SOURCE | `tests/coding_agent/test_runtime_extensions.py` |
+## Comparative product benchmark
+
+`benchmarks/agent_compare/` runs the pinned TypeScript Coding Agent and this Python CLI with the same model, isolated task fixture, Tool set, context window, output limit, HOME, and workspace. It combines deterministic core parity with repeated live-model traces and artifact validators. The initial three-run analysis is recorded in `docs/audit/agent-trace-comparison-20260903.md`.
+
+Live `qwen-plus` runs are observational evidence, not deterministic fixtures. Model Tool plans can vary between repetitions, so those runs do not change a `SOURCE` row to `DONE`.
+
+## Product invariants through Phase 31
+
+- Agent Core parity remains separated from product-layer source mapping;
+- package mutations and extension replacement validate a candidate before finalization and restore prior state on failure;
+- Print, JSON, RPC, Interactive, approval, attachments, and telemetry use one `AgentSession` path;
+- terminal wide-cell and grapheme cursor invariants are property-tested;
+- attachment bytes, dimensions, pixels, and workspace roots are bounded before model submission;
+- telemetry payload collection is opt-in and exporters apply redaction;
+- exact approval caches compare literal canonical arguments, while glob matching requires an explicit pattern path;
+- release verification builds and clean-installs both wheel and sdist.

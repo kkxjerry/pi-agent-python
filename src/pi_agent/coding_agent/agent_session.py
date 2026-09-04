@@ -323,6 +323,10 @@ class AgentSession:
         return self.agent.is_streaming
 
     @property
+    def thinking_level(self) -> AgentThinkingLevel:
+        return self.agent.thinking_level
+
+    @property
     def is_idle(self) -> bool:
         return not self.agent.is_streaming and not self._is_compacting
 
@@ -349,7 +353,14 @@ class AgentSession:
     ) -> AgentRunMessages:
         self._ensure_open()
         selected = options or PromptOptions()
+        if selected.images and "image" not in self.agent.model.input:
+            raise ValueError(
+                f"model {self.agent.model.provider}/{self.agent.model.id} "
+                "does not accept image input"
+            )
         if self.agent.is_streaming:
+            if selected.images:
+                raise ValueError("queued steering/follow-up messages cannot include images")
             if selected.streaming_behavior == "steer":
                 await self.steer_async(cast(str | AgentMessage, prompt))
                 return self._empty_run()

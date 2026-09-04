@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0.dev0 — Phase 25–31
+
+- Added a real interactive TUI over `AgentSession`, including incremental input, bracketed paste, Unicode cell layout, multi-line editing, completion, commands, selectors, transcript scrolling, and row-differential rendering.
+- Added bounded image ingestion, PNG/JPEG/GIF/WebP dimension parsing, model `ImageContent`, optional Pillow resize, and Kitty/iTerm rendering helpers.
+- Added failure-isolated run/turn/model/tool tracing, token/cost/tool metrics, redaction, and memory/JSONL/HTTP exporters.
+- Added pre-tool approval policy, TUI approvals, audit logging, explicit default security posture, and shell-free Docker/Podman command construction.
+- Added fault-injection tests, property-style tests, local performance benchmarks, and a reproducible TypeScript-vs-Python Agent trace comparison using isolated homes and workspaces.
+- Added user documentation, examples, phase gates, wheel/sdist builds, and clean-install validation.
+- Consolidated duplicate TUI and telemetry drafts into compatibility adapters over one implementation, and removed the competing authentication, extension, package, and multi-session runtime drafts so Phase 21–24 remains the canonical product foundation.
+
 ## 0.5.0.dev0
 
 - Added process-safe credential storage, redacted credential metadata, environment resolution, and single-flight OAuth refresh.

@@ -337,6 +337,15 @@ class Agent:
         self._config.prepare_next_turn = value
 
     @property
+    def stream_options(self) -> StreamOptions:
+        return copy.deepcopy(self._config.stream_options)
+
+    @stream_options.setter
+    def stream_options(self, value: StreamOptions) -> None:
+        self._ensure_idle("change stream options")
+        self._config.stream_options = copy.deepcopy(value)
+
+    @property
     def signal(self) -> CancellationToken | None:
         return self._active_signal
 
