@@ -94,6 +94,7 @@ async def test_bash_streams_progress_and_returns_exit_status(tmp_path: Path) -> 
         updates.append,
     )
 
+    assert result.is_error is True
     assert result.details["exitCode"] == 3
     assert result.details["stdout"] == "out"
     assert result.details["stderr"] == "err"

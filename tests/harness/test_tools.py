@@ -82,6 +82,7 @@ async def test_bash_captures_output_exit_code_and_progress(tmp_path: Path) -> No
 
     result = await tool.execute("call-1", {"command": command}, None, updates.append)
 
+    assert result.is_error is False
     assert result.details["exitCode"] == 0
     assert "out" in result.details["stdout"]
     assert "err" in result.details["stderr"]

@@ -67,7 +67,7 @@ def create_bash_tool(
                 f"{rendered}"
             )
         rendered = f"{rendered}\n\nProcess exited with code {result.exit_code}"
-        return text_result(
+        tool_result = text_result(
             rendered,
             details={
                 "command": command,
@@ -79,6 +79,8 @@ def create_bash_tool(
                 "truncatedBy": truncated.truncated_by,
             },
         )
+        tool_result.is_error = result.exit_code != 0
+        return tool_result
 
     return AgentTool(
         name="bash",
