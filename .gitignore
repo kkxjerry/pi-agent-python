@@ -32,3 +32,6 @@ benchmarks/swe5/upstream_observed_template.json
 # Local verification handoff files
 .finalize_*
 .phase*_current_checks.txt
+
+# GitHub Actions stays local for this public mirror
+.github/workflows/
