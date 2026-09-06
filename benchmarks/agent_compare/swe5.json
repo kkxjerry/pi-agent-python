@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "name": "swe5-harness-diagnostic",
+  "dataset": "SWE-bench/SWE-bench_Verified",
+  "datasetRevision": "7fbf76412d990c6e8eca289e98fbef1018264634",
+  "repetitions": 1,
+  "instances": [
+    {
+      "instance_id": "pytest-dev__pytest-6202",
+      "bucket": "surgical-fix",
+      "agentTimeoutSeconds": 900,
+      "gradeTimeoutSeconds": 900
+    },
+    {
+      "instance_id": "pytest-dev__pytest-7205",
+      "bucket": "failure-recovery",
+      "agentTimeoutSeconds": 900,
+      "gradeTimeoutSeconds": 900
+    },
+    {
+      "instance_id": "pytest-dev__pytest-8399",
+      "bucket": "multi-file-contract",
+      "agentTimeoutSeconds": 900,
+      "gradeTimeoutSeconds": 900
+    },
+    {
+      "instance_id": "sympy__sympy-19637",
+      "bucket": "localization",
+      "agentTimeoutSeconds": 900,
+      "gradeTimeoutSeconds": 1200
+    },
+    {
+      "instance_id": "sympy__sympy-14248",
+      "bucket": "regression-long-horizon",
+      "agentTimeoutSeconds": 900,
+      "gradeTimeoutSeconds": 1800
+    }
+  ],
+  "model": {
+    "provider": "dashscope",
+    "id": "qwen-plus",
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "contextWindow": 98304,
+    "maxTokens": 4096,
+    "thinking": "off"
+  },
+  "budgets": {
+    "maxModelCalls": 15,
+    "maxToolCalls": 60,
+    "maxInputTokens": 250000,
+    "maxOutputTokens": 20000
+  }
+}

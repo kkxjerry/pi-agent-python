@@ -142,6 +142,19 @@ async def test_openai_provider_streams_text_usage_and_serializes_request(model: 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("override,expected", [(None, 4096), (128, 128)])
+async def test_request_uses_model_output_limit_unless_explicitly_overridden(
+    model: Model, override: int | None, expected: int
+) -> None:
+    selected = replace(model, max_tokens=4096)
+    provider = OpenAICompatibleProvider()
+    request = await provider._build_request(
+        selected, Context(messages=[UserMessage("fixture")]), StreamOptions(max_tokens=override)
+    )
+    assert json.loads(request.body)["max_tokens"] == expected
+
+
+@pytest.mark.asyncio
 async def test_openai_provider_accumulates_fragmented_tool_arguments(model: Model) -> None:
     transport = FakeTransport(
         [

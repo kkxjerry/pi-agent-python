@@ -447,8 +447,9 @@ class OpenAICompatibleProvider:
             ]
         if options.temperature is not None:
             body["temperature"] = options.temperature
-        if options.max_tokens is not None:
-            body["max_tokens"] = options.max_tokens
+        max_tokens = options.max_tokens if options.max_tokens is not None else model.max_tokens
+        if max_tokens > 0:
+            body["max_tokens"] = max_tokens
         if options.tool_choice is not None:
             body["tool_choice"] = options.tool_choice
         user_id = options.metadata.get("user_id")

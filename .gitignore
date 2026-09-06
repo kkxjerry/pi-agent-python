@@ -17,3 +17,18 @@ dist/
 
 tools/upstream-fixtures/node_modules/
 tools/upstream-fixtures/.tmp/
+
+# Local SWE-5 execution state and large trace artifacts
+.swe5_*
+benchmarks/swe5/PYTHON_GIT_SHA
+benchmarks/swe5/debug/
+benchmarks/swe5/latest-result/
+benchmarks/swe5/results/
+benchmarks/swe5/selection-candidates.json
+benchmarks/swe5/preflight.json
+benchmarks/swe5/summary-generation.trace.txt
+benchmarks/swe5/upstream_observed_template.json
+
+# Local verification handoff files
+.finalize_*
+.phase*_current_checks.txt

@@ -14,6 +14,16 @@ from ._upstream import UPSTREAM
 from ._version import __version__
 
 
+def _parse_sampling_params(raw: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError("sampling parameters must be a JSON object") from exc
+    if not isinstance(value, dict):
+        raise argparse.ArgumentTypeError("sampling parameters must be a JSON object")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pi-py", description="Python implementation of pi")
     parser.add_argument("--version", action="store_true")
@@ -31,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key")
     parser.add_argument("--context-window", type=int, default=128_000)
     parser.add_argument("--max-tokens", type=int, default=16_384)
+    parser.add_argument("--sampling-params", type=_parse_sampling_params, default=None)
     parser.add_argument(
         "--thinking",
         choices=("off", "minimal", "low", "medium", "high", "xhigh", "max"),
@@ -100,6 +111,7 @@ async def _run_agent_mode(args: argparse.Namespace) -> int:
         reasoning=args.thinking not in {None, "off"},
         context_window=args.context_window,
         max_tokens=args.max_tokens,
+        sampling_params=getattr(args, "sampling_params", None) or {},
     )
     settings = SettingsResolver().resolve(
         global_path=Path.home() / ".pi" / "agent" / "settings.json",

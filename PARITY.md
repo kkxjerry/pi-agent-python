@@ -49,6 +49,11 @@ Legend:
 | Vendor browser/device OAuth UI and OS keychain | BOUNDARY | injected refresh callback and file storage only |
 | OTLP protobuf/backend compatibility | BOUNDARY | project JSONL and generic HTTP JSON only |
 
+## Phase 25–31 status
+
+Phase 25–31 remains source-mapped and locally tested. No row in that range claims a new
+official TypeScript execution fixture.
+
 ## Executed fixture coverage
 
 The pinned TypeScript runner executes 20 deterministic Agent Core scenarios. Python parity tests preserve event ordering, queue injection positions, stop reasons, ToolCall IDs, ToolResult IDs, Tool completion order, and transcript order. Timestamps, generated IDs not fixed by a scenario, and provider token counts are normalized.
@@ -60,6 +65,25 @@ No Phase 21–31 row is labelled as a new `upstream-execution` fixture. Those pr
 `benchmarks/agent_compare/` runs the pinned TypeScript Coding Agent and this Python CLI with the same model, isolated task fixture, Tool set, context window, output limit, HOME, and workspace. It combines deterministic core parity with repeated live-model traces and artifact validators. The initial three-run analysis is recorded in `docs/audit/agent-trace-comparison-20260903.md`.
 
 Live `qwen-plus` runs are observational evidence, not deterministic fixtures. Model Tool plans can vary between repetitions, so those runs do not change a `SOURCE` row to `DONE`.
+
+## SWE runner audit — 2026-09-04
+
+The maintained SWE entry point is `benchmarks/agent_compare/swe_run.py`, not
+`benchmarks/swe5/`. The audit and its explicit remaining blockers are recorded in
+`docs/audit/swe5-runner-audit-20260904.md`.
+
+- The generic CLI `--sampling-params` option forwards existing model sampling parameters.
+- The OpenAI-compatible request builder falls back to `model.max_tokens` when a call
+  does not provide an explicit limit; direct request tests cover the override rule.
+- `tests/benchmarks/test_swe_run.py` covers capture faults, large JSON events, timeout
+  cleanup, cache-inclusive usage, patch export, grading isolation, and trace comparison.
+- `tests/benchmarks/test_swe_offline_cli.py` executes both actual CLIs against a scripted
+  localhost SSE server. Both receive a failed baseline and failed edit, then execute a
+  successful edit and verification. Request bodies verify thinking-off and output limits.
+
+The scripted provider makes no real Qwen calls and does not measure repair reasoning.
+This is executed CLI integration evidence, not a new checked-in upstream golden fixture,
+not full product parity, and not a SWE-bench score. Formal five-task runs remain unexecuted.
 
 ## Product invariants through Phase 31
 
